@@ -1,0 +1,16 @@
+version: "3.8"
+
+services:
+  ca:
+    build: ./vc-ca
+    container_name: vp_ca
+    ports:
+      - "8000:8000"
+
+  verifier:
+    build: ./verifier-site
+    container_name: verifier-site
+    ports:
+      - "5000:5000"
+    depends_on:
+      - ca

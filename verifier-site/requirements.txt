@@ -1,0 +1,5 @@
+flask
+pyjwt
+flask_cors
+requests
+cryptography
