@@ -1,11 +1,14 @@
-version: "3.8"
+#version: "3.8"
 
 services:
   ca:
     build: ./vc-ca
-    container_name: vp_ca
+    container_name: vc-ca
     ports:
       - "8000:8000"
+    volumes:
+      - ./data/keys:/app/keys
+    restart: always
 
   verifier:
     build: ./verifier-site
@@ -14,3 +17,4 @@ services:
       - "5000:5000"
     depends_on:
       - ca
+    restart: always

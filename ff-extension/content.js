@@ -1,5 +1,4 @@
 console.log("[EXT] content.js loaded");
-
 let requestSent = false;
 
 // Fired when backend sends response back to content-script
@@ -23,6 +22,13 @@ function tryTriggerOnce() {
     const div = document.getElementById("vc-request");
     if (!div) return;  // Nothing to do yet
 
+    const userAgreed = window.confirm("This site is requesting your VC. Allow sharing?");
+
+    if (!userAgreed) {
+        console.log("[EXT] User denied the request.");
+        requestSent = true; // Stop asking for this session
+        return;
+    }
     requestSent = true;  // Prevent double triggers
 
     console.log("[EXT] Triggering SD / ZKP request…");

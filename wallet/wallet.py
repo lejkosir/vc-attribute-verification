@@ -4,12 +4,14 @@ import base64
 import hashlib
 import threading
 from pathlib import Path
-
+import subprocess
+import tempfile
+import os
 import requests
 from fastapi import FastAPI
 from pydantic import BaseModel
 import uvicorn
-
+import platform
 # STORAGE
 
 WALLET_DIR = Path.home() / ".vcwallet"
@@ -129,34 +131,53 @@ def selective_disclosure_cli():
     res = requests.post("http://localhost:5000/verify", json=payload)
     print("Result:", res.json())
 
-# -------------------- API Selective Disclosure -----------------------
 
+# -------------------- API Selective Disclosure -----------------------
 def selective_disclosure_api(attribute):
     creds = load_credentials()
-    if not creds:
-        return {"error": "no_credentials"}
+    if not creds: return {"error": "no_credentials"}
 
     vc_jwt = creds[0]["vc_jwt"]
-
     payload_part = vc_jwt["credential"][0]
-    unhashed = json.loads(
-        base64.b64decode(payload_part.split(".")[1]).decode("utf-8")
-    )["vc"]["credentialSubject"]
 
-    if attribute not in unhashed:
-        return {"error": "attribute_not_found"}
+    try:
+        body_json = base64.b64decode(payload_part.split(".")[1] + "===").decode("utf-8")
+        unhashed = json.loads(body_json)["vc"]["credentialSubject"]
+    except Exception as e:
+        return {"error": f"decode_failed: {e}"}
 
+    if attribute not in unhashed: return {"error": "attribute_not_found"}
     value = unhashed[attribute]
-    yn = input(f"Do you want to disclose {attribute}? (y/n): ")
-    if yn == "y":
+
+    result_path = os.path.join(tempfile.gettempdir(), "wallet_decision.txt")
+
+    if platform.system() == "Windows":
+        cmd = f'echo OFF & cls & echo VC REQUEST: {attribute} ({value}) & set /p choice="Allow? (y/n): " & echo !choice! > "{result_path}"'
+        subprocess.run(f'start /wait cmd /V:ON /C "{cmd}"', shell=True)
+    else:
+        linux_cmd = f'echo "VC REQUEST: {attribute} ({value})"; read -p "Allow? (y/n): " choice; echo $choice > "{result_path}"'
+        subprocess.run(['xterm', '-e', 'bash', '-c', linux_cmd])
+
+    time.sleep(0.2)
+    decision = "n"
+    if os.path.exists(result_path):
+        with open(result_path, "r") as f:
+            decision = f.read().strip().lower()
+        try:
+            os.remove(result_path)
+        except:
+            pass
+
+    if decision.startswith('y'):
+        print(f"APPROVED: Shared {attribute}")
         return {
             "timestamp": int(time.time()),
             "hashed_vc": vc_jwt["credential"][1],
             "disclosed": {attribute: value}
         }
     else:
-        return None
-
+        print(f"DENIED: User typed '{decision}'")
+        return {"error": "denied"}
 # -------------------- FastAPI Server -----------------------
 
 app = FastAPI()

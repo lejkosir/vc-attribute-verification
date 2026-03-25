@@ -90,11 +90,17 @@ def test():
         }
 
         // If cookie exists → show protected content and hide request div
-        if (getCookie("verified_age") === "true") {
-            console.log("Already verified.");
-            document.getElementById("vc-request").style.display = "none";
-            document.getElementById("protected-content").style.display = "block";
-        }
+        document.addEventListener("DOMContentLoaded", function() {
+            if (getCookie("verified_age") === "true") {
+                console.log("Already verified.");
+                
+                const vcRequest = document.getElementById("vc-request");
+                const protectedContent = document.getElementById("protected-content");
+        
+                if (vcRequest) vcRequest.style.display = "none";
+                if (protectedContent) protectedContent.style.display = "block";
+            }
+        });
 
         window.addEventListener("VCResponse", (ev) => {
             console.log("Site received VC response:", ev.detail);
