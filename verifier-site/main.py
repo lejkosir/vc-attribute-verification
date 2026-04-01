@@ -22,7 +22,7 @@ def verify():
     hashed_jwt = data["hashed_vc"]
     disclosures = data["disclosed"]
 
-    # get key from our CA
+    # CA key
     pub_pem = requests.get("http://ca:8000/public_key").json()["publicKeyPem"]
     public_key = serialization.load_pem_public_key(pub_pem.encode())
 
@@ -79,7 +79,6 @@ def home():
                 .find(row => row.startsWith(name + '='))?.split('=')[1];
         }
 
-        // If cookie exists show protected content
         document.addEventListener("DOMContentLoaded", function() {
             if (getCookie("verified_age") === "true") {
                 console.log("Already verified.");

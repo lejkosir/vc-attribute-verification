@@ -72,7 +72,7 @@ def fetch_vc_from_ca():
     else:
         print("Error:", res.text)
 
-# -------------------- CLI Functions -----------------------
+# CLI
 
 def list_credentials():
     creds = load_credentials()
@@ -132,7 +132,7 @@ def selective_disclosure_cli():
     print("Result:", res.json())
 
 
-# -------------------- API Selective Disclosure -----------------------
+# API
 def selective_disclosure_api(attribute):
     creds = load_credentials()
     if not creds: return {"error": "no_credentials"}
@@ -178,8 +178,8 @@ def selective_disclosure_api(attribute):
     else:
         print(f"DENIED: User typed '{decision}'")
         return {"error": "denied"}
-# -------------------- FastAPI Server -----------------------
 
+# SERVER
 app = FastAPI()
 
 class DisclosureRequest(BaseModel):
@@ -192,7 +192,6 @@ def disclose(req: DisclosureRequest):
 def start_server():
     uvicorn.run(app, host="127.0.0.1", port=8001, log_level="info")
 
-# -------------------- CLI -----------------------
 
 def main_menu():
     ensure_storage()
@@ -218,7 +217,6 @@ def main_menu():
         elif choice == "9":
             break
 
-# -------------------- Main -----------------------
 
 if __name__ == "__main__":
     server_thread = threading.Thread(target=start_server, daemon=True)
