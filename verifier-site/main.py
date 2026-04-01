@@ -39,7 +39,7 @@ def verify():
 
     claims = payload_json["vc"]["credentialSubject"]
 
-    # verify each disclosed claim
+    # verify claim
     for key, value in disclosures.items():
         salt = base64.b64decode(claims[key]["salt"])
         combined = f"{key}:{value}".encode() + salt
@@ -49,7 +49,7 @@ def verify():
             resp = make_response(jsonify({"valid": False}))
             return resp, 400
 
-    # successful verification -> set cookie
+    # set cookies
     resp = make_response(jsonify({"valid": True}))
     resp.set_cookie(
         "verified_age",
@@ -62,16 +62,6 @@ def verify():
 
 @app.route("/")
 def home():
-    return """
-    <form method="POST" action="/verify">
-      <textarea name="payload"></textarea>
-      <button type="submit">Verify</button>
-    </form>
-    """
-
-
-@app.route("/test")
-def test():
     return """
     <!DOCTYPE html>
     <html>
@@ -89,7 +79,7 @@ def test():
                 .find(row => row.startsWith(name + '='))?.split('=')[1];
         }
 
-        // If cookie exists → show protected content and hide request div
+        // If cookie exists show protected content
         document.addEventListener("DOMContentLoaded", function() {
             if (getCookie("verified_age") === "true") {
                 console.log("Already verified.");

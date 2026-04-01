@@ -1,52 +1,46 @@
-console.log("[EXT] content.js loaded");
-let requestSent = false;
+console.log("VC Extension Loaded");
 
-// Fired when backend sends response back to content-script
-browser.runtime.onMessage.addListener((msg) => {
-    if (msg.type === "vc_response") {
-        // Convert payload to JSON string so it can cross into page context
-        const safe = JSON.stringify(msg.payload);
+var alreadyStarted = false;
 
-        const script = document.createElement("script");
-        script.textContent = `
-            window.dispatchEvent(new CustomEvent("VCResponse", { detail: ${safe} }));
-        `;
-        document.documentElement.appendChild(script);
-        script.remove();
+browser.runtime.onMessage.addListener(function(message) {
+    if (message.type === "vc_response") {
+        console.log("Got response from wallet!");
+
+        var responseData = JSON.stringify(message.payload);
+        var scriptTag = document.createElement("script");
+        scriptTag.text = "window.dispatchEvent(new CustomEvent('VCResponse', { detail: " + responseData + " }));";
+        document.head.appendChild(scriptTag);
     }
 });
 
-function tryTriggerOnce() {
-    if (requestSent) return;
-
-    const div = document.getElementById("vc-request");
-    if (!div) return;  // Nothing to do yet
-
-    const userAgreed = window.confirm("This site is requesting your VC. Allow sharing?");
-
-    if (!userAgreed) {
-        console.log("[EXT] User denied the request.");
-        requestSent = true; // Stop asking for this session
+function checkRequest() {
+    if (alreadyStarted === true) {
         return;
     }
-    requestSent = true;  // Prevent double triggers
 
-    console.log("[EXT] Triggering SD / ZKP request…");
-    console.log("[EXT] Detected div with data:", div.dataset);
-    // Send request to background (wallet request)
-    browser.runtime.sendMessage({
-        type: "vc_request_detected",
-        attributes: { ...div.dataset }   // optional: <div data-*>
-    });
-    console.log("[EXT] Message sent to background, waiting for response…");
+    var requestDiv = document.getElementById("vc-request");
+
+    if (requestDiv != null) {
+        alreadyStarted = true;
+
+        var confirmCheck = confirm("This site wants your VC. Allow?");
+        if (confirmCheck == true) {
+            console.log("User clicked OK");
+
+            var simpleAttributes = {
+                attribute: requestDiv.dataset.attribute
+            };
+
+            browser.runtime.sendMessage({
+                type: "vc_request_detected",
+                attributes: simpleAttributes
+            });
+        } else {
+            console.log("User cancelled.");
+            alreadyStarted = false;
+            requestDiv.remove();
+        }
+    }
 }
 
-// Try immediately
-tryTriggerOnce();
-
-// Also try after DOM is ready
-document.addEventListener("DOMContentLoaded", tryTriggerOnce);
-
-// Final safety: observe dynamic pages
-const observer = new MutationObserver(tryTriggerOnce);
-observer.observe(document.body, { childList: true, subtree: true });
+setInterval(checkRequest, 250);
