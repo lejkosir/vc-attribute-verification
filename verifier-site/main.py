@@ -6,6 +6,8 @@ import json
 import requests
 import jwt
 from cryptography.hazmat.primitives import serialization
+import os
+import subprocess
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
@@ -15,10 +17,35 @@ def b64url_decode(s):
     padding = "=" * (-len(s) % 4)
     return base64.urlsafe_b64decode(s + padding)
 
+def get_poseidon_hash(value, salt):
+    result = subprocess.run(
+        ['node', '/app/poseidon_hasher.js', str(value), str(salt)],
+        capture_output=True, text=True
+    )
+    if result.stderr:
+        print("Node Error:", result.stderr)
+    return int(result.stdout.strip())
+
+
+def normalize_and_convert(v):
+    if isinstance(v, int):
+        return v
+    if str(v).isdigit():
+        return int(v)
+
+    s = str(v)
+    mapping = {"č": "c", "š": "s", "ž": "z", "ć": "c", "đ": "d", "Č": "C", "Š": "S", "Ž": "Z", "Ć": "C", "Đ": "D"}
+    for char, replacement in mapping.items():
+        s = s.replace(char, replacement)
+
+    b = s[:31].encode('utf-8')
+    return int.from_bytes(b, byteorder='big')
+
 
 @app.route("/verify", methods=["POST"])
 def verify():
     data = request.json
+    print(f"DEBUG: Data received: {data}")
     hashed_jwt = data["hashed_vc"]
     disclosures = data["disclosed"]
 
@@ -28,36 +55,25 @@ def verify():
 
     # verify signature
     try:
-        payload_json = jwt.decode(
-            hashed_jwt,
-            public_key,
-            algorithms=["ES256"]
-        )
+        payload_json = jwt.decode(hashed_jwt, public_key, algorithms=["ES256"])
     except Exception as e:
-        return jsonify({"valid": False, "error": "invalid signature", "detail": str(e)}), 400
+        print(f"DEBUG: JWT Error: {e}")
+        return jsonify({"valid": False, "error": "signature"}), 400
 
 
-    claims = payload_json["vc"]["credentialSubject"]
+    ca_signed_claims = payload_json["vc"]["credentialSubject"]
 
-    # verify claim
-    for key, value in disclosures.items():
-        salt = base64.b64decode(claims[key]["salt"])
-        combined = f"{key}:{value}".encode() + salt
-        expected_hash = hashlib.sha256(combined).hexdigest()
+    for key, info in disclosures.items():
+        salt = int(info["salt"])
+        raw_val = info["val"]
+        val_int = normalize_and_convert(raw_val)
 
-        if expected_hash != claims[key]["hash"]:
-            resp = make_response(jsonify({"valid": False}))
-            return resp, 400
+        calculated_hash = get_poseidon_hash(val_int, salt)
+        expected_hash = int(ca_signed_claims[key]["hash"])
 
-    # set cookies
-    resp = make_response(jsonify({"valid": True}))
-    resp.set_cookie(
-        "verified_age",
-        "true",
-        httponly=False,
-        samesite="Lax"
-    )
-    return resp
+        if calculated_hash != expected_hash:
+            return jsonify({"valid": False}), 400
+    return jsonify({"valid": True})
 
 
 @app.route("/")

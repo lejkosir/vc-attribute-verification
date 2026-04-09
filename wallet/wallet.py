@@ -108,26 +108,28 @@ def selective_disclosure_cli():
     vc_jwt = creds[idx]["vc_jwt"]
 
     payload_part = vc_jwt["credential"][0]
-    unhashed = json.loads(
-        base64.b64decode(payload_part.split(".")[1]).decode("utf-8")
-    )["vc"]["credentialSubject"]
+    unhashed = json.loads(base64.b64decode(payload_part.split(".")[1] + "===").decode("utf-8"))["vc"][
+        "credentialSubject"]
 
     print("\nSelect attribute:")
-    kv_pairs = []
-    for i, (k, v) in enumerate(unhashed.items()):
-        print(f"[{i}] {k}: {v}")
-        kv_pairs.append({k: v})
+    kv_keys = list(unhashed.keys())
+    for i, k in enumerate(kv_keys):
+        print(f"[{i}] {k}: {unhashed[k]['val']}")
 
     idx2 = int(input("Choose: "))
-    disclosed = kv_pairs[idx2]
-    key = list(disclosed.keys())[0]
+    key = kv_keys[idx2]
+    info = unhashed[key]
 
     payload = {
         "timestamp": int(time.time()),
         "hashed_vc": vc_jwt["credential"][1],
-        "disclosed": disclosed
+        "disclosed": {
+            key: {
+                "val": str(info["val"]),
+                "salt": str(info["salt"])
+            }
+        }
     }
-
     res = requests.post("http://localhost:5000/verify", json=payload)
     print("Result:", res.json())
 
@@ -147,15 +149,17 @@ def selective_disclosure_api(attribute):
         return {"error": f"decode_failed: {e}"}
 
     if attribute not in unhashed: return {"error": "attribute_not_found"}
-    value = unhashed[attribute]
+
+    info = unhashed[attribute]
+    val_to_show = info["val"]
 
     result_path = os.path.join(tempfile.gettempdir(), "wallet_decision.txt")
 
     if platform.system() == "Windows":
-        cmd = f'echo OFF & cls & echo VC REQUEST: {attribute} ({value}) & set /p choice="Allow? (y/n): " & echo !choice! > "{result_path}"'
+        cmd = f'echo OFF & cls & echo VC REQUEST: {attribute} ({val_to_show}) & set /p choice="Allow? (y/n): " & echo !choice! > "{result_path}"'
         subprocess.run(f'start /wait cmd /V:ON /C "{cmd}"', shell=True)
     else:
-        linux_cmd = f'echo "VC REQUEST: {attribute} ({value})"; read -p "Allow? (y/n): " choice; echo $choice > "{result_path}"'
+        linux_cmd = f'echo "VC REQUEST: {attribute} ({val_to_show})"; read -p "Allow? (y/n): " choice; echo $choice > "{result_path}"'
         subprocess.run(['xterm', '-e', 'bash', '-c', linux_cmd])
 
     time.sleep(0.2)
@@ -172,8 +176,13 @@ def selective_disclosure_api(attribute):
         print(f"APPROVED: Shared {attribute}")
         return {
             "timestamp": int(time.time()),
-            "hashed_vc": vc_jwt["credential"][1],
-            "disclosed": {attribute: value}
+            "hashed_vc": vc_jwt[1],
+            "disclosed": {
+                attribute: {
+                    "val": str(info["val"]),
+                    "salt": str(info["salt"])  # Ensure this is a string
+                }
+            }
         }
     else:
         print(f"DENIED: User typed '{decision}'")

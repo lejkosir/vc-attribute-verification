@@ -18,3 +18,10 @@ services:
     depends_on:
       - ca
     restart: always
+    environment:
+      - PYTHONUNBUFFERED=1
+#
+#  circom:
+#    build: ./circom
+#    container_name: circom
+#    restart: always
