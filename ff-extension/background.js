@@ -4,9 +4,14 @@ browser.runtime.onMessage.addListener(function(request, sender, sendResponse) {
     console.log("Background received message:", request);
 
     if (request.type === "vc_request_detected") {
-        console.log("Contacting Python Wallet at localhost:8001...");
+        var method = request.attributes.method || "sd";
+        var endpoint = method === "zkp"
+            ? "http://localhost:8001/disclose_zkp"
+            : "http://localhost:8001/disclose";
 
-        fetch("http://localhost:8001/disclose", {
+        console.log("Contacting Python Wallet at", endpoint);
+
+        fetch(endpoint, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -18,6 +23,7 @@ browser.runtime.onMessage.addListener(function(request, sender, sendResponse) {
         })
         .then(function(data) {
             console.log("Wallet responded with:", data);
+            data.method = method;
 
             if (sender.tab && sender.tab.id) {
                 browser.tabs.sendMessage(sender.tab.id, {

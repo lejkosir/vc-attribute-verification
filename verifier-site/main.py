@@ -8,6 +8,7 @@ import jwt
 from cryptography.hazmat.primitives import serialization
 import os
 import subprocess
+import tempfile
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
@@ -73,7 +74,68 @@ def verify():
 
         if calculated_hash != expected_hash:
             return jsonify({"valid": False}), 400
-    return jsonify({"valid": True})
+
+    resp = make_response(jsonify({"valid": True}))
+    resp.set_cookie("verified_age", "true", samesite="Lax")
+    return resp
+
+
+VERIFICATION_KEY_PATH = "/app/verification_key.json"
+
+@app.route("/verify_zkp", methods=["POST"])
+def verify_zkp():
+    data = request.json
+    proof = data.get("proof")
+    public = data.get("public")
+    hashed_jwt = data.get("hashed_vc")
+    attribute = data.get("attribute")
+
+    if not proof or public is None or not hashed_jwt or not attribute:
+        return jsonify({"valid": False, "error": "missing fields"}), 400
+
+    # Verify CA signature on hashed VC — same as /verify
+    pub_pem = requests.get("http://ca:8000/public_key").json()["publicKeyPem"]
+    public_key = serialization.load_pem_public_key(pub_pem.encode())
+    try:
+        payload_json = jwt.decode(hashed_jwt, public_key, algorithms=["ES256"])
+    except Exception as e:
+        print(f"DEBUG: JWT Error: {e}")
+        return jsonify({"valid": False, "error": "signature"}), 400
+
+    ca_signed_claims = payload_json["vc"]["credentialSubject"]
+    if attribute not in ca_signed_claims:
+        return jsonify({"valid": False, "error": "attribute_not_found"}), 400
+
+    # Pin proof's public signal to CA-signed hash
+    # public[0] is expectedHash from the circuit's public inputs
+    ca_hash = str(ca_signed_claims[attribute]["hash"])
+    proof_hash = str(public[0])
+    if proof_hash != ca_hash:
+        print(f"DEBUG: hash mismatch — proof={proof_hash}, ca={ca_hash}")
+        return jsonify({"valid": False, "error": "hash_mismatch"}), 400
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        proof_path = os.path.join(tmpdir, "proof.json")
+        public_path = os.path.join(tmpdir, "public.json")
+
+        with open(proof_path, "w") as f:
+            json.dump(proof, f)
+        with open(public_path, "w") as f:
+            json.dump(public, f)
+
+        result = subprocess.run(
+            ["snarkjs", "groth16", "verify", VERIFICATION_KEY_PATH, public_path, proof_path],
+            capture_output=True, text=True
+        )
+        print("snarkjs stdout:", result.stdout)
+        print("snarkjs stderr:", result.stderr)
+
+        if result.returncode == 0 and "OK!" in result.stdout:
+            resp = make_response(jsonify({"valid": True}))
+            resp.set_cookie("verified_age", "true", samesite="Lax")
+            return resp
+        else:
+            return jsonify({"valid": False, "error": "proof_invalid"}), 400
 
 
 @app.route("/")
@@ -83,7 +145,8 @@ def home():
     <html>
     <body>
         <h1>Test page loaded</h1>
-        <button id="trigger-vc">Verify Age</button>
+        <button id="trigger-vc-sd">Verify Age (Selective Disclosure)</button>
+        <button id="trigger-vc-zkp">Verify Age (Zero-Knowledge Proof)</button>
         <div id="protected-content" style="display:none;">
             <h2>You are verified. Protected content visible.</h2>
         </div>
@@ -98,11 +161,7 @@ def home():
         document.addEventListener("DOMContentLoaded", function() {
             if (getCookie("verified_age") === "true") {
                 console.log("Already verified.");
-                
-                const vcRequest = document.getElementById("vc-request");
                 const protectedContent = document.getElementById("protected-content");
-        
-                if (vcRequest) vcRequest.style.display = "none";
                 if (protectedContent) protectedContent.style.display = "block";
             }
         });
@@ -110,30 +169,38 @@ def home():
         window.addEventListener("VCResponse", (ev) => {
             console.log("Site received VC response:", ev.detail);
 
-            fetch("http://localhost:5000/verify", {
+            var method = ev.detail.method || "sd";
+            var verifyEndpoint = method === "zkp"
+                ? "http://localhost:5000/verify_zkp"
+                : "http://localhost:5000/verify";
+
+            fetch(verifyEndpoint, {
                 method: "POST",
-                credentials: "include",   // store cookie
+                credentials: "include",
                 headers: {"Content-Type": "application/json"},
                 body: JSON.stringify(ev.detail)
             })
             .then(res => res.json())
             .then(data => {
                 console.log("Verification result:", data);
-
                 if (data.valid) {
-                    document.getElementById("vc-request").style.display = "none";
                     document.getElementById("protected-content").style.display = "block";
                 }
             })
             .catch(err => console.error(err));
         });
-        document.getElementById("trigger-vc").addEventListener("click", () => {
-            console.log("Adding VC request div...");
+
+        function triggerVC(method) {
+            if (document.getElementById("vc-request")) return;
             const div = document.createElement("div");
             div.id = "vc-request";
             div.dataset.attribute = "age";
+            div.dataset.method = method;
             document.body.appendChild(div);
-        });
+        }
+
+        document.getElementById("trigger-vc-sd").addEventListener("click", () => triggerVC("sd"));
+        document.getElementById("trigger-vc-zkp").addEventListener("click", () => triggerVC("zkp"));
         </script>
     </body>
     </html>

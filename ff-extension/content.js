@@ -23,17 +23,19 @@ function checkRequest() {
     if (requestDiv != null) {
         alreadyStarted = true;
 
-        var confirmCheck = confirm("This site wants your VC. Allow?");
-        if (confirmCheck == true) {
-            console.log("User clicked OK");
+        var method = requestDiv.dataset.method || "sd";
+        var methodLabel = method === "zkp" ? "Zero-Knowledge Proof" : "Selective Disclosure";
+        var confirmCheck = confirm("This site wants your VC (" + methodLabel + "). Allow?");
 
-            var simpleAttributes = {
-                attribute: requestDiv.dataset.attribute
-            };
+        if (confirmCheck == true) {
+            console.log("User clicked OK, method:", method);
 
             browser.runtime.sendMessage({
                 type: "vc_request_detected",
-                attributes: simpleAttributes
+                attributes: {
+                    attribute: requestDiv.dataset.attribute,
+                    method: method
+                }
             });
         } else {
             console.log("User cancelled.");
