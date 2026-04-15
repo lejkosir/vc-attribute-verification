@@ -1,23 +1,18 @@
-FROM node:20-bullseye
+FROM node:20-bookworm
 
-RUN apt-get update && apt-get install -y \
-    curl build-essential git \
-    python3 python3-pip
-
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-ENV PATH="/root/.cargo/bin:${PATH}"
-
-WORKDIR /tmp
-RUN git clone https://github.com/iden3/circom.git \
-    && cd circom \
-    && cargo build --release \
-    # The fix: Install from the /circom directory inside the repo
-    && cargo install --path circom \
-    && cp /root/.cargo/bin/circom /usr/local/bin/
+RUN apt-get update && apt-get install -y curl && \
+    curl -L https://github.com/iden3/circom/releases/download/v2.1.9/circom-linux-amd64 \
+         -o /usr/local/bin/circom && \
+    chmod +x /usr/local/bin/circom
 
 RUN npm install -g snarkjs
 
 WORKDIR /app
-COPY . .
 
-CMD ["tail", "-f", "/dev/null"]
+RUN npm install circomlib
+
+COPY circuits/age_checkV2/age_check_v2.circom /app/age_check_v2.circom
+COPY circom/run_setup.sh /app/run_setup.sh
+RUN chmod +x /app/run_setup.sh
+
+CMD ["/bin/sh", "/app/run_setup.sh"]

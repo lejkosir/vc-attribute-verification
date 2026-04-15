@@ -24,7 +24,10 @@ function checkRequest() {
         alreadyStarted = true;
 
         var method = requestDiv.dataset.method || "sd";
-        var methodLabel = method === "zkp" ? "Zero-Knowledge Proof" : "Selective Disclosure";
+        var methodLabel =
+            method === "zkp_v2" ? "Zero-Knowledge Proof (Unlinkable)" :
+            method === "zkp"    ? "Zero-Knowledge Proof" :
+                                  "Selective Disclosure";
         var confirmCheck = confirm("This site wants your VC (" + methodLabel + "). Allow?");
 
         if (confirmCheck == true) {

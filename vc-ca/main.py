@@ -4,7 +4,7 @@ from pydantic import BaseModel
 import jwt
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
-import hashlib, base64
+import hashlib, base64, json
 import os
 import subprocess
 
@@ -14,8 +14,9 @@ app = FastAPI(title="VC CA Service")
 KEYS_DIR = "keys"
 PRIVATE_KEY_PATH = os.path.join(KEYS_DIR, "ec_private.pem")
 PUBLIC_KEY_PATH = os.path.join(KEYS_DIR, "ec_public.pem")
+BJJ_PRIVATE_KEY_PATH = os.path.join(KEYS_DIR, "bjj_secret.json")
+BJJ_PUBLIC_KEY_PATH  = os.path.join(KEYS_DIR, "bjj_public.json")
 
-# TODO: SALT V NON-HASHED VC!!!!!!!
 def ensure_keys():
     os.makedirs(KEYS_DIR, exist_ok=True)
 
@@ -44,7 +45,40 @@ def ensure_keys():
     print("Keys ready.")
 
 
+def ensure_bjj_keys():
+    if not os.path.exists(BJJ_PRIVATE_KEY_PATH):
+        print("Generating BabyJubJub keypair...")
+        result = subprocess.run(
+            ['node', '/app/eddsa_signer.js', 'keygen'],
+            capture_output=True, text=True, check=True
+        )
+        data = json.loads(result.stdout.strip())
+        with open(BJJ_PRIVATE_KEY_PATH, "w") as f:
+            json.dump({"sk": data["sk"]}, f)
+        with open(BJJ_PUBLIC_KEY_PATH, "w") as f:
+            json.dump({"Ax": data["Ax"], "Ay": data["Ay"]}, f)
+    print("BabyJubJub keys ready.")
+
+
+def load_bjj_public_key():
+    with open(BJJ_PUBLIC_KEY_PATH) as f:
+        return json.load(f)   # {"Ax": "...", "Ay": "..."}
+
+
+def sign_with_bjj(hash_int):
+    with open(BJJ_PRIVATE_KEY_PATH) as f:
+        sk = json.load(f)["sk"]
+    result = subprocess.run(
+        ['node', '/app/eddsa_signer.js', 'sign', sk, str(hash_int)],
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"eddsa_signer.js sign failed: {result.stderr.strip()}")
+    return json.loads(result.stdout.strip())   # {"R8x": "...", "R8y": "...", "S": "..."}
+
+
 ensure_keys()
+ensure_bjj_keys()
 
 
 def load_private_key():
@@ -112,13 +146,13 @@ def process_claims(attributes):
         salt_int = int.from_bytes(os.urandom(16), byteorder='big')
         val_int = normalize_and_convert(value)
         h = get_poseidon_hash(val_int, salt_int)
-
-        public_subject[key] = {"hash": str(h)}  # STORE AS STRING
+        # CE NI STRING ZGUBI BITE!!!
+        public_subject[key] = {"hash": str(h)}  #STRING
         private_subject[key] = {
             "val": value,
             "val_int": val_int,
-            "salt": str(salt_int),  # STORE AS STRING
-            "hash": str(h)  # STORE AS STRING
+            "salt": str(salt_int),  #STRING
+            "hash": str(h)  #STRING
         }
     return public_subject, private_subject
 
@@ -165,8 +199,28 @@ def issue_vc(req: VCRequest):
         algorithm="ES256"
     )
 
+    # ZKPv2
+    bjj_pk = load_bjj_public_key()
+    eddsa_attributes = {}
+    for key, info in private_secrets.items():
+        hash_int = int(info["hash"])
+        sig = sign_with_bjj(hash_int)
+        eddsa_attributes[key] = {
+            "val":     info["val"],
+            "val_int": info["val_int"],
+            "salt":    info["salt"],
+            "hash":    info["hash"],
+            "sig":     sig
+        }
+
+    eddsa_credential = {
+        "subject_id": req.subject_id,
+        "attributes": eddsa_attributes,
+        "public_key": bjj_pk
+    }
+
     return {
-        "credential": (jwt_vc, jwt_vc_hashed)
+        "credential": (jwt_vc, jwt_vc_hashed, eddsa_credential)
     }
 
 
@@ -175,3 +229,8 @@ def get_public_key():
     with open(PUBLIC_KEY_PATH, "r") as f:
         pub = f.read()
     return {"publicKeyPem": pub}
+
+
+@app.get("/public_key_bjj")
+def get_public_key_bjj():
+    return load_bjj_public_key()

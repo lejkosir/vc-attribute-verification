@@ -80,7 +80,8 @@ def verify():
     return resp
 
 
-VERIFICATION_KEY_PATH = "/app/verification_key.json"
+VERIFICATION_KEY_PATH    = "/app/verification_key.json"
+VERIFICATION_KEY_V2_PATH = "/app/circuits_v2/verification_key.json"
 
 @app.route("/verify_zkp", methods=["POST"])
 def verify_zkp():
@@ -138,6 +139,54 @@ def verify_zkp():
             return jsonify({"valid": False, "error": "proof_invalid"}), 400
 
 
+@app.route("/verify_zkp_v2", methods=["POST"])
+def verify_zkp_v2():
+    data   = request.json
+    proof  = data.get("proof")
+    public = data.get("public")   # [Ax_pub, Ay_pub, threshold]
+
+    if not proof or public is None:
+        return jsonify({"valid": False, "error": "missing fields"}), 400
+
+    # fetch BJJ public key, verify the proof public inputs match
+    try:
+        ca_bjj = requests.get("http://ca:8000/public_key_bjj").json()
+    except Exception as e:
+        return jsonify({"valid": False, "error": f"ca_unreachable: {e}"}), 500
+
+    if str(public[0]) != str(ca_bjj["Ax"]) or str(public[1]) != str(ca_bjj["Ay"]):
+        print(f"DEBUG: BJJ key mismatch — proof={public[0]},{public[1]} ca={ca_bjj}")
+        return jsonify({"valid": False, "error": "public_key_mismatch"}), 400
+
+    required_threshold = 18
+    if int(public[2]) != required_threshold:
+        return jsonify({"valid": False, "error": "threshold_mismatch"}), 400
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        proof_path  = os.path.join(tmpdir, "proof.json")
+        public_path = os.path.join(tmpdir, "public.json")
+
+        with open(proof_path,  "w") as f:
+            json.dump(proof,  f)
+        with open(public_path, "w") as f:
+            json.dump(public, f)
+
+        result = subprocess.run(
+            ["snarkjs", "groth16", "verify",
+             VERIFICATION_KEY_V2_PATH, public_path, proof_path],
+            capture_output=True, text=True
+        )
+        print("snarkjs v2 stdout:", result.stdout)
+        print("snarkjs v2 stderr:", result.stderr)
+
+        if result.returncode == 0 and "OK!" in result.stdout:
+            resp = make_response(jsonify({"valid": True}))
+            resp.set_cookie("verified_age", "true", samesite="Lax")
+            return resp
+        else:
+            return jsonify({"valid": False, "error": "proof_invalid"}), 400
+
+
 @app.route("/")
 def home():
     return """
@@ -146,7 +195,8 @@ def home():
     <body>
         <h1>Test page loaded</h1>
         <button id="trigger-vc-sd">Verify Age (Selective Disclosure)</button>
-        <button id="trigger-vc-zkp">Verify Age (Zero-Knowledge Proof)</button>
+        <button id="trigger-vc-zkp">Verify Age (ZKP — hash preimage)</button>
+        <button id="trigger-vc-zkp-v2">Verify Age (ZKP — unlinkable)</button>
         <div id="protected-content" style="display:none;">
             <h2>You are verified. Protected content visible.</h2>
         </div>
@@ -170,9 +220,10 @@ def home():
             console.log("Site received VC response:", ev.detail);
 
             var method = ev.detail.method || "sd";
-            var verifyEndpoint = method === "zkp"
-                ? "http://localhost:5000/verify_zkp"
-                : "http://localhost:5000/verify";
+            var verifyEndpoint =
+                method === "zkp_v2" ? "http://localhost:5000/verify_zkp_v2" :
+                method === "zkp"    ? "http://localhost:5000/verify_zkp"    :
+                                      "http://localhost:5000/verify";
 
             fetch(verifyEndpoint, {
                 method: "POST",
@@ -201,6 +252,7 @@ def home():
 
         document.getElementById("trigger-vc-sd").addEventListener("click", () => triggerVC("sd"));
         document.getElementById("trigger-vc-zkp").addEventListener("click", () => triggerVC("zkp"));
+        document.getElementById("trigger-vc-zkp-v2").addEventListener("click", () => triggerVC("zkp_v2"));
         </script>
     </body>
     </html>

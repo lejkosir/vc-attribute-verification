@@ -16,7 +16,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN npm install circomlibjs
 
 COPY main.py .
-COPY ../poseidon_hasher.js .
+COPY poseidon_hasher.js .
+COPY eddsa_signer.js .
 
 EXPOSE 8000
 

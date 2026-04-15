@@ -22,8 +22,14 @@ services:
       - PYTHONUNBUFFERED=1
     volumes:
       - ./circuits/age_checkV1/verification_key.json:/app/verification_key.json:ro
+      - ./circuits/age_checkV2:/app/circuits_v2:ro
 
 #  circom:
-#    build: ./circom
-#    container_name: circom
-#    restart: always
+#    build:
+#      context: .
+#      dockerfile: circom/Dockerfile
+#    container_name: circom-setup
+#    volumes:
+#      - ./circuits/age_checkV2:/output
+#    profiles:
+#      - setup

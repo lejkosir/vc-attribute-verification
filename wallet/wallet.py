@@ -17,6 +17,11 @@ import platform
 WALLET_DIR = Path.home() / ".vcwallet"
 VC_STORE = WALLET_DIR / "credentials.json"
 
+# V2 circuit artifacts are output here by the circom Docker setup container
+PROJECT_ROOT    = Path(__file__).parent.parent
+CIRCUIT_V2_DIR  = PROJECT_ROOT / "circuits" / "age_checkV2"
+CIRCUIT_V2_JS   = CIRCUIT_V2_DIR / "age_check_v2_js"
+
 def ensure_storage():
     WALLET_DIR.mkdir(parents=True, exist_ok=True)
     if not VC_STORE.exists():
@@ -96,6 +101,26 @@ def remove_credentials():
         del creds[idx]
         save_credentials(creds)
         print("Removed.\n")
+def popup(attribute, val_to_show):
+    result_path = os.path.join(tempfile.gettempdir(), "wallet_decision.txt")
+
+    if platform.system() == "Windows":
+        cmd = f'echo OFF & cls & echo ZKP V2 REQUEST: {attribute} ({val_to_show}) & set /p choice="Allow? (y/n): " & echo !choice! > "{result_path}"'
+        subprocess.run(f'start /wait cmd /V:ON /C "{cmd}"', shell=True)
+    else:
+        linux_cmd = f'echo "ZKP V2 REQUEST: {attribute} ({val_to_show})"; read -p "Allow? (y/n): " choice; echo $choice > "{result_path}"'
+        subprocess.run(['xterm', '-e', 'bash', '-c', linux_cmd])
+
+    time.sleep(0.2)
+    decision = "n"
+    if os.path.exists(result_path):
+        with open(result_path, "r") as f:
+            decision = f.read().strip().lower()
+        try:
+            os.remove(result_path)
+        except:
+            pass
+    return decision
 
 def selective_disclosure_cli():
     creds = load_credentials()
@@ -153,24 +178,7 @@ def selective_disclosure_api(attribute):
     info = unhashed[attribute]
     val_to_show = info["val"]
 
-    result_path = os.path.join(tempfile.gettempdir(), "wallet_decision.txt")
-
-    if platform.system() == "Windows":
-        cmd = f'echo OFF & cls & echo VC REQUEST: {attribute} ({val_to_show}) & set /p choice="Allow? (y/n): " & echo !choice! > "{result_path}"'
-        subprocess.run(f'start /wait cmd /V:ON /C "{cmd}"', shell=True)
-    else:
-        linux_cmd = f'echo "VC REQUEST: {attribute} ({val_to_show})"; read -p "Allow? (y/n): " choice; echo $choice > "{result_path}"'
-        subprocess.run(['xterm', '-e', 'bash', '-c', linux_cmd])
-
-    time.sleep(0.2)
-    decision = "n"
-    if os.path.exists(result_path):
-        with open(result_path, "r") as f:
-            decision = f.read().strip().lower()
-        try:
-            os.remove(result_path)
-        except:
-            pass
+    decision = popup(attribute, val_to_show)
 
     if decision.startswith('y'):
         print(f"APPROVED: Shared {attribute}")
@@ -266,7 +274,6 @@ def zkp_disclosure_api(attribute):
     if attribute not in unhashed: return {"error": "attribute_not_found"}
     info = unhashed[attribute]
 
-    # Decode hashed JWT for expected hash
     hashed_part = vc_jwt["credential"][1]
     try:
         hashed_body = base64.b64decode(hashed_part.split(".")[1] + "===").decode("utf-8")
@@ -277,29 +284,12 @@ def zkp_disclosure_api(attribute):
     expected_hash = hashed_claims[attribute]["hash"]
     val_to_show = info["val"]
 
-    result_path = os.path.join(tempfile.gettempdir(), "wallet_decision.txt")
-
-    if platform.system() == "Windows":
-        cmd = f'echo OFF & cls & echo ZKP REQUEST: {attribute} ({val_to_show}) & set /p choice="Allow? (y/n): " & echo !choice! > "{result_path}"'
-        subprocess.run(f'start /wait cmd /V:ON /C "{cmd}"', shell=True)
-    else:
-        linux_cmd = f'echo "ZKP REQUEST: {attribute} ({val_to_show})"; read -p "Allow? (y/n): " choice; echo $choice > "{result_path}"'
-        subprocess.run(['xterm', '-e', 'bash', '-c', linux_cmd])
-
-    time.sleep(0.2)
-    decision = "n"
-    if os.path.exists(result_path):
-        with open(result_path, "r") as f:
-            decision = f.read().strip().lower()
-        try:
-            os.remove(result_path)
-        except:
-            pass
+    decision = popup(attribute, val_to_show)
 
     if decision.startswith('y'):
         print(f"APPROVED: ZKP for {attribute}")
         result = generate_zkp(info["val_int"], info["salt"], expected_hash)
-        if isinstance(result, dict):  # error from generate_zkp
+        if isinstance(result, dict):
             return result
         proof, public = result
         return {
@@ -307,6 +297,93 @@ def zkp_disclosure_api(attribute):
             "public": public,
             "hashed_vc": vc_jwt["credential"][1],
             "attribute": attribute
+        }
+    else:
+        print(f"DENIED: User typed '{decision}'")
+        return {"error": "denied"}
+
+
+# ZKP V2
+
+def generate_zkp_v2(val_int, salt, R8x, R8y, S, Ax, Ay, threshold=18):
+    wasm_file    = "age_check_v2.wasm"
+    zkey_file    = str(CIRCUIT_V2_DIR / "age_check_v2_final.zkey")
+    input_file   = "input_v2.json"
+    witness_file = "witness_v2.wtns"
+    proof_file   = "proof_v2.json"
+    public_file  = "public_v2.json"
+
+    if not CIRCUIT_V2_JS.exists():
+        return {"error": f"V2 circuit artifacts not found at {CIRCUIT_V2_JS} — run: docker compose --profile setup run circom"}
+
+    inputs = {
+        "val":       str(val_int),
+        "salt":      str(salt),
+        "R8x":       str(R8x),
+        "R8y":       str(R8y),
+        "S":         str(S),
+        "Ax":        str(Ax),
+        "Ay":        str(Ay),
+        "Ax_pub":    str(Ax),
+        "Ay_pub":    str(Ay),
+        "threshold": str(threshold)
+    }
+
+    with open(CIRCUIT_V2_JS / input_file, "w") as f:
+        json.dump(inputs, f)
+
+    subprocess.run(
+        ['node', 'generate_witness.js', wasm_file, input_file, witness_file],
+        cwd=CIRCUIT_V2_JS,
+        check=True
+    )
+
+    cmd = f'snarkjs groth16 prove "{zkey_file}" {witness_file} {proof_file} {public_file}'
+    subprocess.run(cmd, cwd=CIRCUIT_V2_JS, shell=True, check=True)
+
+    time.sleep(0.2)
+    with open(CIRCUIT_V2_JS / proof_file) as f:
+        proof = json.load(f)
+    with open(CIRCUIT_V2_JS / public_file) as f:
+        public = json.load(f)
+    return proof, public
+
+
+def zkp_v2_disclosure_api(attribute):
+    creds = load_credentials()
+    if not creds: return {"error": "no_credentials"}
+
+    vc_jwt     = creds[0]["vc_jwt"]
+    credential = vc_jwt["credential"]
+
+    if len(credential) < 3:
+        return {"error": "credential_missing_eddsa_component — re-issue the credential with the updated CA"}
+
+    eddsa_cred = credential[2]
+    if attribute not in eddsa_cred["attributes"]:
+        return {"error": "attribute_not_found"}
+
+    attr_info   = eddsa_cred["attributes"][attribute]
+    pk          = eddsa_cred["public_key"]
+    sig         = attr_info["sig"]
+    val_to_show = attr_info["val"]
+
+    decision = popup(attribute, val_to_show)
+
+    if decision.startswith('y'):
+        print(f"APPROVED: ZKP v2 for {attribute}")
+        result = generate_zkp_v2(
+            val_int=attr_info["val_int"],
+            salt=attr_info["salt"],
+            R8x=sig["R8x"], R8y=sig["R8y"], S=sig["S"],
+            Ax=pk["Ax"],    Ay=pk["Ay"]
+        )
+        if isinstance(result, dict):
+            return result
+        proof, public = result
+        return {
+            "proof":  proof,
+            "public": public
         }
     else:
         print(f"DENIED: User typed '{decision}'")
@@ -327,6 +404,10 @@ def disclose(req: DisclosureRequest):
 def disclose_zkp(req: DisclosureRequest):
     return zkp_disclosure_api(req.attribute)
 
+@app.post("/disclose_zkp_v2")
+def disclose_zkp_v2(req: DisclosureRequest):
+    return zkp_v2_disclosure_api(req.attribute)
+
 def start_server():
     uvicorn.run(app, host="127.0.0.1", port=8001, log_level="info")
 
@@ -341,6 +422,7 @@ def main_menu():
         print("3. Selective disclosure (manual)")
         print("4. Remove credentials")
         print("5. DEBUG ZKP")
+        print("6. ZKP V2 disclosure (unlinkable, EdDSA in-circuit)")
         print("9. Exit")
 
         choice = input("> ")
@@ -355,6 +437,10 @@ def main_menu():
             remove_credentials()
         elif choice == "5":
             generate_zkp(val="23", salt="55139075980980285140718201367886350513", expected_hash="15656714370521641343762386545036458095253698961471300526207916569789931879587")
+        elif choice == "6":
+            attr = input("Attribute to disclose via ZKP v2: ").strip()
+            result = zkp_v2_disclosure_api(attr)
+            print("Result:", result)
         elif choice == "9":
             break
 

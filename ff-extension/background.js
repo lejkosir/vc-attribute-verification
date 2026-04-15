@@ -5,9 +5,10 @@ browser.runtime.onMessage.addListener(function(request, sender, sendResponse) {
 
     if (request.type === "vc_request_detected") {
         var method = request.attributes.method || "sd";
-        var endpoint = method === "zkp"
-            ? "http://localhost:8001/disclose_zkp"
-            : "http://localhost:8001/disclose";
+        var endpoint =
+            method === "zkp_v2" ? "http://localhost:8001/disclose_zkp_v2" :
+            method === "zkp"    ? "http://localhost:8001/disclose_zkp"    :
+                                  "http://localhost:8001/disclose";
 
         console.log("Contacting Python Wallet at", endpoint);
 

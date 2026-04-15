@@ -17,7 +17,7 @@ RUN npm install circomlibjs
 RUN npm install -g snarkjs
 
 COPY main.py .
-COPY ../poseidon_hasher.js .
+COPY poseidon_hasher.js .
 
 EXPOSE 5000
 
