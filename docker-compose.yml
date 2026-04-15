@@ -24,12 +24,12 @@ services:
       - ./circuits/age_checkV1/verification_key.json:/app/verification_key.json:ro
       - ./circuits/age_checkV2:/app/circuits_v2:ro
 
-#  circom:
-#    build:
-#      context: .
-#      dockerfile: circom/Dockerfile
-#    container_name: circom-setup
-#    volumes:
-#      - ./circuits/age_checkV2:/output
-#    profiles:
-#      - setup
+  circom:
+    build:
+      context: .
+      dockerfile: circom/Dockerfile
+    container_name: circom-setup
+    volumes:
+      - ./circuits/age_checkV2:/output
+    profiles:
+      - setup
