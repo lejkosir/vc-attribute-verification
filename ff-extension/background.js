@@ -34,7 +34,7 @@ browser.runtime.onMessage.addListener(function(request, sender, sendResponse) {
             }
         })
         .catch(function(err) {
-            console.error("Fetch failed. Is the Python Wallet running?", err);
+            console.error("wallet error", err);
         });
 
         return true;

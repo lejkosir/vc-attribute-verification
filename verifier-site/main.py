@@ -1,22 +1,15 @@
 from flask import Flask, request, jsonify, make_response
 from flask_cors import CORS
-import base64
-import hashlib
 import json
 import requests
 import jwt
 from cryptography.hazmat.primitives import serialization
-import os
 import subprocess
-import tempfile
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
 
 
-def b64url_decode(s):
-    padding = "=" * (-len(s) % 4)
-    return base64.urlsafe_b64decode(s + padding)
 
 def get_poseidon_hash(value, salt):
     result = subprocess.run(
@@ -46,7 +39,6 @@ def normalize_and_convert(v):
 @app.route("/verify", methods=["POST"])
 def verify():
     data = request.json
-    print(f"DEBUG: Data received: {data}")
     hashed_jwt = data["hashed_vc"]
     disclosures = data["disclosed"]
 
@@ -58,8 +50,8 @@ def verify():
     try:
         payload_json = jwt.decode(hashed_jwt, public_key, algorithms=["ES256"])
     except Exception as e:
-        print(f"DEBUG: JWT Error: {e}")
-        return jsonify({"valid": False, "error": "signature"}), 400
+        print("jwt error")
+        return jsonify({"valid": False}), 400
 
 
     ca_signed_claims = payload_json["vc"]["credentialSubject"]
@@ -91,100 +83,74 @@ def verify_zkp():
     hashed_jwt = data.get("hashed_vc")
     attribute = data.get("attribute")
 
-    if not proof or public is None or not hashed_jwt or not attribute:
-        return jsonify({"valid": False, "error": "missing fields"}), 400
-
-    # Verify CA signature on hashed VC — same as /verify
     pub_pem = requests.get("http://ca:8000/public_key").json()["publicKeyPem"]
     public_key = serialization.load_pem_public_key(pub_pem.encode())
     try:
         payload_json = jwt.decode(hashed_jwt, public_key, algorithms=["ES256"])
     except Exception as e:
-        print(f"DEBUG: JWT Error: {e}")
-        return jsonify({"valid": False, "error": "signature"}), 400
+        print("jwt error")
+        return jsonify({"valid": False}), 400
 
     ca_signed_claims = payload_json["vc"]["credentialSubject"]
-    if attribute not in ca_signed_claims:
-        return jsonify({"valid": False, "error": "attribute_not_found"}), 400
 
-    # Pin proof's public signal to CA-signed hash
-    # public[0] is expectedHash from the circuit's public inputs
     ca_hash = str(ca_signed_claims[attribute]["hash"])
     proof_hash = str(public[0])
     if proof_hash != ca_hash:
-        print(f"DEBUG: hash mismatch — proof={proof_hash}, ca={ca_hash}")
-        return jsonify({"valid": False, "error": "hash_mismatch"}), 400
+        print("hash mismatch")
+        return jsonify({"valid": False}), 400
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        proof_path = os.path.join(tmpdir, "proof.json")
-        public_path = os.path.join(tmpdir, "public.json")
+    with open("/tmp/proof.json", "w") as f:
+        json.dump(proof, f)
+    with open("/tmp/public.json", "w") as f:
+        json.dump(public, f)
 
-        with open(proof_path, "w") as f:
-            json.dump(proof, f)
-        with open(public_path, "w") as f:
-            json.dump(public, f)
+    result = subprocess.run(
+        ["snarkjs", "groth16", "verify", VERIFICATION_KEY_PATH, "/tmp/public.json", "/tmp/proof.json"],
+        capture_output=True, text=True
+    )
+    print(result.stdout)
 
-        result = subprocess.run(
-            ["snarkjs", "groth16", "verify", VERIFICATION_KEY_PATH, public_path, proof_path],
-            capture_output=True, text=True
-        )
-        print("snarkjs stdout:", result.stdout)
-        print("snarkjs stderr:", result.stderr)
-
-        if result.returncode == 0 and "OK!" in result.stdout:
-            resp = make_response(jsonify({"valid": True}))
-            resp.set_cookie("verified_age", "true", samesite="Lax")
-            return resp
-        else:
-            return jsonify({"valid": False, "error": "proof_invalid"}), 400
+    if result.returncode == 0 and "OK!" in result.stdout:
+        resp = make_response(jsonify({"valid": True}))
+        resp.set_cookie("verified_age", "true", samesite="Lax")
+        return resp
+    else:
+        return jsonify({"valid": False}), 400
 
 
 @app.route("/verify_zkp_v2", methods=["POST"])
 def verify_zkp_v2():
-    data   = request.json
-    proof  = data.get("proof")
-    public = data.get("public")   # [Ax_pub, Ay_pub, threshold]
+    data = request.json
+    proof = data.get("proof")
+    public = data.get("public")
 
-    if not proof or public is None:
-        return jsonify({"valid": False, "error": "missing fields"}), 400
-
-    # fetch BJJ public key, verify the proof public inputs match
-    try:
-        ca_bjj = requests.get("http://ca:8000/public_key_bjj").json()
-    except Exception as e:
-        return jsonify({"valid": False, "error": f"ca_unreachable: {e}"}), 500
+    ca_bjj = requests.get("http://ca:8000/public_key_bjj").json()
 
     if str(public[0]) != str(ca_bjj["Ax"]) or str(public[1]) != str(ca_bjj["Ay"]):
-        print(f"DEBUG: BJJ key mismatch — proof={public[0]},{public[1]} ca={ca_bjj}")
-        return jsonify({"valid": False, "error": "public_key_mismatch"}), 400
+        print("key mismatch")
+        return jsonify({"valid": False}), 400
 
     required_threshold = 18
     if int(public[2]) != required_threshold:
-        return jsonify({"valid": False, "error": "threshold_mismatch"}), 400
+        return jsonify({"valid": False}), 400
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        proof_path  = os.path.join(tmpdir, "proof.json")
-        public_path = os.path.join(tmpdir, "public.json")
+    with open("/tmp/proof_v2.json", "w") as f:
+        json.dump(proof, f)
+    with open("/tmp/public_v2.json", "w") as f:
+        json.dump(public, f)
 
-        with open(proof_path,  "w") as f:
-            json.dump(proof,  f)
-        with open(public_path, "w") as f:
-            json.dump(public, f)
+    result = subprocess.run(
+        ["snarkjs", "groth16", "verify", VERIFICATION_KEY_V2_PATH, "/tmp/public_v2.json", "/tmp/proof_v2.json"],
+        capture_output=True, text=True
+    )
+    print(result.stdout)
 
-        result = subprocess.run(
-            ["snarkjs", "groth16", "verify",
-             VERIFICATION_KEY_V2_PATH, public_path, proof_path],
-            capture_output=True, text=True
-        )
-        print("snarkjs v2 stdout:", result.stdout)
-        print("snarkjs v2 stderr:", result.stderr)
-
-        if result.returncode == 0 and "OK!" in result.stdout:
-            resp = make_response(jsonify({"valid": True}))
-            resp.set_cookie("verified_age", "true", samesite="Lax")
-            return resp
-        else:
-            return jsonify({"valid": False, "error": "proof_invalid"}), 400
+    if result.returncode == 0 and "OK!" in result.stdout:
+        resp = make_response(jsonify({"valid": True}))
+        resp.set_cookie("verified_age", "true", samesite="Lax")
+        return resp
+    else:
+        return jsonify({"valid": False}), 400
 
 
 @app.route("/")

@@ -4,18 +4,18 @@ from pydantic import BaseModel
 import jwt
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
-import hashlib, base64, json
+import json
 import os
 import subprocess
 
 
-app = FastAPI(title="VC CA Service")
+app = FastAPI()
 
 KEYS_DIR = "keys"
 PRIVATE_KEY_PATH = os.path.join(KEYS_DIR, "ec_private.pem")
 PUBLIC_KEY_PATH = os.path.join(KEYS_DIR, "ec_public.pem")
 BJJ_PRIVATE_KEY_PATH = os.path.join(KEYS_DIR, "bjj_secret.json")
-BJJ_PUBLIC_KEY_PATH  = os.path.join(KEYS_DIR, "bjj_public.json")
+BJJ_PUBLIC_KEY_PATH = os.path.join(KEYS_DIR, "bjj_public.json")
 
 def ensure_keys():
     os.makedirs(KEYS_DIR, exist_ok=True)
@@ -62,7 +62,7 @@ def ensure_bjj_keys():
 
 def load_bjj_public_key():
     with open(BJJ_PUBLIC_KEY_PATH) as f:
-        return json.load(f)   # {"Ax": "...", "Ay": "..."}
+        return json.load(f)
 
 
 def sign_with_bjj(hash_int):
@@ -73,8 +73,8 @@ def sign_with_bjj(hash_int):
         capture_output=True, text=True
     )
     if result.returncode != 0:
-        raise RuntimeError(f"eddsa_signer.js sign failed: {result.stderr.strip()}")
-    return json.loads(result.stdout.strip())   # {"R8x": "...", "R8y": "...", "S": "..."}
+        raise RuntimeError("sign failed")
+    return json.loads(result.stdout.strip())
 
 
 ensure_keys()
@@ -84,11 +84,6 @@ ensure_bjj_keys()
 def load_private_key():
     with open(PRIVATE_KEY_PATH, "rb") as f:
         return serialization.load_pem_private_key(f.read(), password=None)
-
-
-def load_public_key():
-    with open(PUBLIC_KEY_PATH, "rb") as f:
-        return serialization.load_pem_public_key(f.read())
 
 
 class VCRequest(BaseModel):
@@ -119,24 +114,6 @@ def normalize_and_convert(v):
 
     b = s[:31].encode('utf-8')
     return int.from_bytes(b, byteorder='big')
-
-
-def hash_claims(attributes):
-    hashed = {}
-    for key, value in attributes.items():
-        salt_bytes = os.urandom(16)
-        salt_int = int.from_bytes(salt_bytes, byteorder='big')
-
-        val_int = normalize_and_convert(value)
-
-        h = get_poseidon_hash(val_int, salt_int)
-
-        hashed[key] = {
-            "hash": h,
-            "salt": salt_int,
-            "raw_value": val_int
-        }
-    return hashed
 
 
 def process_claims(attributes):
@@ -206,11 +183,11 @@ def issue_vc(req: VCRequest):
         hash_int = int(info["hash"])
         sig = sign_with_bjj(hash_int)
         eddsa_attributes[key] = {
-            "val":     info["val"],
+            "val": info["val"],
             "val_int": info["val_int"],
-            "salt":    info["salt"],
-            "hash":    info["hash"],
-            "sig":     sig
+            "salt": info["salt"],
+            "hash": info["hash"],
+            "sig": sig
         }
 
     eddsa_credential = {

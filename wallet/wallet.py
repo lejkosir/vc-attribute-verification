@@ -1,7 +1,6 @@
 import json
 import time
 import base64
-import hashlib
 import threading
 from pathlib import Path
 import subprocess
@@ -17,7 +16,7 @@ import platform
 WALLET_DIR = Path.home() / ".vcwallet"
 VC_STORE = WALLET_DIR / "credentials.json"
 
-# V2 circuit artifacts are output here by the circom Docker setup container
+# V2 files
 PROJECT_ROOT    = Path(__file__).parent.parent
 CIRCUIT_V2_DIR  = PROJECT_ROOT / "circuits" / "age_checkV2"
 CIRCUIT_V2_JS   = CIRCUIT_V2_DIR / "age_check_v2_js"
@@ -171,7 +170,7 @@ def selective_disclosure_api(attribute):
         body_json = base64.b64decode(payload_part.split(".")[1] + "===").decode("utf-8")
         unhashed = json.loads(body_json)["vc"]["credentialSubject"]
     except Exception as e:
-        return {"error": f"decode_failed: {e}"}
+        return {"error": "decode error"}
 
     if attribute not in unhashed: return {"error": "attribute_not_found"}
 
@@ -181,19 +180,19 @@ def selective_disclosure_api(attribute):
     decision = popup(attribute, val_to_show)
 
     if decision.startswith('y'):
-        print(f"APPROVED: Shared {attribute}")
+        print("approved")
         return {
             "timestamp": int(time.time()),
             "hashed_vc": vc_jwt["credential"][1],
             "disclosed": {
                 attribute: {
                     "val": str(info["val"]),
-                    "salt": str(info["salt"])  # Ensure this is a string
+                    "salt": str(info["salt"])  # has to be string
                 }
             }
         }
     else:
-        print(f"DENIED: User typed '{decision}'")
+        print("denied")
         return {"error": "denied"}
 
 # ZKP
@@ -220,7 +219,7 @@ def generate_zkp(val, salt, expected_hash):
         body_json = base64.b64decode(payload_part.split(".")[1] + "===").decode("utf-8")
         unhashed = json.loads(body_json)["vc"]["credentialSubject"]
     except Exception as e:
-        return {"error": f"decode_failed: {e}"}
+        return {"error": "decode error"}
 
 
     print(body_json)
@@ -263,13 +262,13 @@ def zkp_disclosure_api(attribute):
 
     vc_jwt = creds[0]["vc_jwt"]
 
-    # Decode plaintext JWT for val and salt
+    # get val, salt from jwt
     plaintext_part = vc_jwt["credential"][0]
     try:
         body_json = base64.b64decode(plaintext_part.split(".")[1] + "===").decode("utf-8")
         unhashed = json.loads(body_json)["vc"]["credentialSubject"]
     except Exception as e:
-        return {"error": f"decode_failed: {e}"}
+        return {"error": "decode error"}
 
     if attribute not in unhashed: return {"error": "attribute_not_found"}
     info = unhashed[attribute]
@@ -279,7 +278,7 @@ def zkp_disclosure_api(attribute):
         hashed_body = base64.b64decode(hashed_part.split(".")[1] + "===").decode("utf-8")
         hashed_claims = json.loads(hashed_body)["vc"]["credentialSubject"]
     except Exception as e:
-        return {"error": f"decode_hashed_failed: {e}"}
+        return {"error": "decode error"}
 
     expected_hash = hashed_claims[attribute]["hash"]
     val_to_show = info["val"]
@@ -287,7 +286,7 @@ def zkp_disclosure_api(attribute):
     decision = popup(attribute, val_to_show)
 
     if decision.startswith('y'):
-        print(f"APPROVED: ZKP for {attribute}")
+        print("approved")
         result = generate_zkp(info["val_int"], info["salt"], expected_hash)
         if isinstance(result, dict):
             return result
@@ -299,33 +298,33 @@ def zkp_disclosure_api(attribute):
             "attribute": attribute
         }
     else:
-        print(f"DENIED: User typed '{decision}'")
+        print("denied")
         return {"error": "denied"}
 
 
 # ZKP V2
 
 def generate_zkp_v2(val_int, salt, R8x, R8y, S, Ax, Ay, threshold=18):
-    wasm_file    = "age_check_v2.wasm"
-    zkey_file    = str(CIRCUIT_V2_DIR / "age_check_v2_final.zkey")
-    input_file   = "input_v2.json"
+    wasm_file = "age_check_v2.wasm"
+    zkey_file = str(CIRCUIT_V2_DIR / "age_check_v2_final.zkey")
+    input_file = "input_v2.json"
     witness_file = "witness_v2.wtns"
-    proof_file   = "proof_v2.json"
-    public_file  = "public_v2.json"
+    proof_file = "proof_v2.json"
+    public_file = "public_v2.json"
 
     if not CIRCUIT_V2_JS.exists():
-        return {"error": f"V2 circuit artifacts not found at {CIRCUIT_V2_JS} — run: docker compose --profile setup run circom"}
+        return {"error": "circuit files not found"}
 
     inputs = {
-        "val":       str(val_int),
-        "salt":      str(salt),
-        "R8x":       str(R8x),
-        "R8y":       str(R8y),
-        "S":         str(S),
-        "Ax":        str(Ax),
-        "Ay":        str(Ay),
-        "Ax_pub":    str(Ax),
-        "Ay_pub":    str(Ay),
+        "val": str(val_int),
+        "salt": str(salt),
+        "R8x": str(R8x),
+        "R8y": str(R8y),
+        "S": str(S),
+        "Ax": str(Ax),
+        "Ay": str(Ay),
+        "Ax_pub": str(Ax),
+        "Ay_pub": str(Ay),
         "threshold": str(threshold)
     }
 
@@ -353,30 +352,30 @@ def zkp_v2_disclosure_api(attribute):
     creds = load_credentials()
     if not creds: return {"error": "no_credentials"}
 
-    vc_jwt     = creds[0]["vc_jwt"]
+    vc_jwt = creds[0]["vc_jwt"]
     credential = vc_jwt["credential"]
 
     if len(credential) < 3:
-        return {"error": "credential_missing_eddsa_component — re-issue the credential with the updated CA"}
+        return {"error": "invalid credential"}
 
     eddsa_cred = credential[2]
     if attribute not in eddsa_cred["attributes"]:
         return {"error": "attribute_not_found"}
 
-    attr_info   = eddsa_cred["attributes"][attribute]
-    pk          = eddsa_cred["public_key"]
-    sig         = attr_info["sig"]
+    attr_info = eddsa_cred["attributes"][attribute]
+    pk = eddsa_cred["public_key"]
+    sig = attr_info["sig"]
     val_to_show = attr_info["val"]
 
     decision = popup(attribute, val_to_show)
 
     if decision.startswith('y'):
-        print(f"APPROVED: ZKP v2 for {attribute}")
+        print("approved")
         result = generate_zkp_v2(
             val_int=attr_info["val_int"],
             salt=attr_info["salt"],
             R8x=sig["R8x"], R8y=sig["R8y"], S=sig["S"],
-            Ax=pk["Ax"],    Ay=pk["Ay"]
+            Ax=pk["Ax"], Ay=pk["Ay"]
         )
         if isinstance(result, dict):
             return result
@@ -386,7 +385,7 @@ def zkp_v2_disclosure_api(attribute):
             "public": public
         }
     else:
-        print(f"DENIED: User typed '{decision}'")
+        print("denied")
         return {"error": "denied"}
 
 
