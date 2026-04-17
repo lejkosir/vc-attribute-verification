@@ -17,9 +17,9 @@ WALLET_DIR = Path.home() / ".vcwallet"
 VC_STORE = WALLET_DIR / "credentials.json"
 
 # V2 files
-PROJECT_ROOT    = Path(__file__).parent.parent
-CIRCUIT_V2_DIR  = PROJECT_ROOT / "circuits" / "age_checkV2"
-CIRCUIT_V2_JS   = CIRCUIT_V2_DIR / "age_check_v2_js"
+PROJECT_ROOT = Path(__file__).parent.parent
+CIRCUIT_V2_DIR = PROJECT_ROOT / "circuits" / "age_checkV2"
+CIRCUIT_V2_JS = CIRCUIT_V2_DIR / "age_check_v2_js"
 
 def ensure_storage():
     WALLET_DIR.mkdir(parents=True, exist_ok=True)
@@ -249,7 +249,10 @@ def generate_zkp(val, salt, expected_hash):
 
 # ZKP API
 def zkp_disclosure_api(attribute):
-    body_json, unhashed, vc_jwt, info = get_creds()
+    body_json, unhashed, vc_jwt = get_creds()
+
+    if attribute not in unhashed: return {"error": "attribute_not_found"}
+    info = unhashed[attribute]
 
     hashed_part = vc_jwt["credential"][1]
     try:

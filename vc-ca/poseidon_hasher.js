@@ -1,4 +1,3 @@
-// poseidon_hasher.js
 const { buildPoseidon } = require("circomlibjs");
 
 async function hash() {
@@ -6,10 +5,8 @@ async function hash() {
     const val = process.argv[2];
     const salt = process.argv[3];
 
-    // Calculate hash
     const hash = poseidon([val, salt]);
-
-    // Poseidon returns a Uint8Array, convert to BigInt string
+    // toObject converts the field element to a BigInt
     console.log(poseidon.F.toObject(hash).toString());
 }
 

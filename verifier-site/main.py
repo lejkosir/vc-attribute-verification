@@ -72,7 +72,7 @@ def verify():
     return resp
 
 
-VERIFICATION_KEY_PATH    = "/app/verification_key.json"
+VERIFICATION_KEY_PATH = "/app/verification_key.json"
 VERIFICATION_KEY_V2_PATH = "/app/circuits_v2/verification_key.json"
 
 @app.route("/verify_zkp", methods=["POST"])
@@ -188,8 +188,8 @@ def home():
             var method = ev.detail.method || "sd";
             var verifyEndpoint =
                 method === "zkp_v2" ? "http://localhost:5000/verify_zkp_v2" :
-                method === "zkp"    ? "http://localhost:5000/verify_zkp"    :
-                                      "http://localhost:5000/verify";
+                method === "zkp" ? "http://localhost:5000/verify_zkp" :
+                "http://localhost:5000/verify";
 
             fetch(verifyEndpoint, {
                 method: "POST",
