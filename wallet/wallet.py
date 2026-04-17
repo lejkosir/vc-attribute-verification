@@ -121,6 +121,23 @@ def popup(attribute, val_to_show):
             pass
     return decision
 
+
+def get_creds():
+    creds = load_credentials()
+    if not creds: return {"error": "no_credentials"}
+
+    vc_jwt = creds[0]["vc_jwt"]
+
+    # get val, salt from jwt
+    plaintext_part = vc_jwt["credential"][0]
+    try:
+        body_json = base64.b64decode(plaintext_part.split(".")[1] + "===").decode("utf-8")
+        unhashed = json.loads(body_json)["vc"]["credentialSubject"]
+    except Exception as e:
+        return {"error": "decode error"}
+
+    return body_json, unhashed, vc_jwt
+
 def selective_disclosure_cli():
     creds = load_credentials()
     if not creds:
@@ -160,20 +177,9 @@ def selective_disclosure_cli():
 
 # API
 def selective_disclosure_api(attribute):
-    creds = load_credentials()
-    if not creds: return {"error": "no_credentials"}
-
-    vc_jwt = creds[0]["vc_jwt"]
-    payload_part = vc_jwt["credential"][0]
-
-    try:
-        body_json = base64.b64decode(payload_part.split(".")[1] + "===").decode("utf-8")
-        unhashed = json.loads(body_json)["vc"]["credentialSubject"]
-    except Exception as e:
-        return {"error": "decode error"}
+    body_json, unhashed, vc_jwt = get_creds()
 
     if attribute not in unhashed: return {"error": "attribute_not_found"}
-
     info = unhashed[attribute]
     val_to_show = info["val"]
 
@@ -206,21 +212,7 @@ def generate_zkp(val, salt, expected_hash):
     proof_file = "proof.json"
     public_file = "public.json"
 
-
-
-
-    creds = load_credentials()
-    if not creds: return {"error": "no_credentials"}
-
-    vc_jwt = creds[0]["vc_jwt"]
-    payload_part = vc_jwt["credential"][0]
-
-    try:
-        body_json = base64.b64decode(payload_part.split(".")[1] + "===").decode("utf-8")
-        unhashed = json.loads(body_json)["vc"]["credentialSubject"]
-    except Exception as e:
-        return {"error": "decode error"}
-
+    body_json, unhashed, vc_jwt = get_creds()
 
     print(body_json)
 
@@ -257,21 +249,7 @@ def generate_zkp(val, salt, expected_hash):
 
 # ZKP API
 def zkp_disclosure_api(attribute):
-    creds = load_credentials()
-    if not creds: return {"error": "no_credentials"}
-
-    vc_jwt = creds[0]["vc_jwt"]
-
-    # get val, salt from jwt
-    plaintext_part = vc_jwt["credential"][0]
-    try:
-        body_json = base64.b64decode(plaintext_part.split(".")[1] + "===").decode("utf-8")
-        unhashed = json.loads(body_json)["vc"]["credentialSubject"]
-    except Exception as e:
-        return {"error": "decode error"}
-
-    if attribute not in unhashed: return {"error": "attribute_not_found"}
-    info = unhashed[attribute]
+    body_json, unhashed, vc_jwt, info = get_creds()
 
     hashed_part = vc_jwt["credential"][1]
     try:
