@@ -16,8 +16,8 @@ import platform
 WALLET_DIR = Path.home() / ".vcwallet"
 VC_STORE = WALLET_DIR / "credentials.json"
 
-# V2 files
 PROJECT_ROOT = Path(__file__).parent.parent
+CIRCUIT_V1_DIR = PROJECT_ROOT / "circuits" / "age_checkV1"
 CIRCUIT_V2_DIR = PROJECT_ROOT / "circuits" / "age_checkV2"
 CIRCUIT_V2_JS = CIRCUIT_V2_DIR / "age_check_v2_js"
 
@@ -204,13 +204,14 @@ def selective_disclosure_api(attribute):
 # ZKP
 
 def generate_zkp(val, salt, expected_hash):
-    witness_js = "generate_witness.js"
-    wasm_file = "age_check.wasm"
-    zkey_file = "age_check_final.zkey"
+    zkey_file = str(CIRCUIT_V1_DIR / "age_check_final.zkey")
     input_file = "input.json"
     witness_file = "witness.wtns"
     proof_file = "proof.json"
     public_file = "public.json"
+
+    if not CIRCUIT_V1_DIR.exists():
+        return {"error": "circuit files not found"}
 
     body_json, unhashed, vc_jwt = get_creds()
 
@@ -222,26 +223,22 @@ def generate_zkp(val, salt, expected_hash):
         "expectedHash": str(expected_hash)
     }
 
-    with open(WALLET_DIR / input_file, "w") as f:
+    with open(CIRCUIT_V1_DIR / input_file, "w") as f:
         json.dump(inputs, f)
 
     subprocess.run(
-        ['node', witness_js, wasm_file, input_file, witness_file],
-        cwd=WALLET_DIR,
+        ['node', 'generate_witness.js', 'age_check.wasm', input_file, witness_file],
+        cwd=CIRCUIT_V1_DIR,
         check=True
     )
 
-    cmd = f'snarkjs groth16 prove {zkey_file} {witness_file} {proof_file} {public_file}'
-    subprocess.run(
-        cmd,
-        cwd=WALLET_DIR,
-        shell=True,
-        check=True
-    )
+    cmd = f'snarkjs groth16 prove "{zkey_file}" {witness_file} {proof_file} {public_file}'
+    subprocess.run(cmd, cwd=CIRCUIT_V1_DIR, shell=True, check=True)
+
     time.sleep(0.2)
-    with open(WALLET_DIR / "proof.json", "r") as f:
+    with open(CIRCUIT_V1_DIR / proof_file) as f:
         proof = json.load(f)
-    with open(WALLET_DIR / "public.json", "r") as f:
+    with open(CIRCUIT_V1_DIR / public_file) as f:
         public = json.load(f)
     print(proof, public)
     return proof, public
