@@ -11,6 +11,7 @@ WORKDIR /app
 
 RUN npm install circomlib
 
+COPY circuits/age_checkV1/age_check.circom /app/age_check.circom
 COPY circuits/age_checkV2/age_check_v2.circom /app/age_check_v2.circom
 COPY circom/run_setup.sh /app/run_setup.sh
 RUN chmod +x /app/run_setup.sh

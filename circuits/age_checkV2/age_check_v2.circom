@@ -7,7 +7,7 @@ include "comparators.circom";
 
 template AgeCheckV2() {
 
-    // private inputs
+    // private
     signal input val;
     signal input salt;
     signal input R8x;
@@ -16,17 +16,17 @@ template AgeCheckV2() {
     signal input Ax;
     signal input Ay;
 
-    // public inputs
+    // public
     signal input Ax_pub;
     signal input Ay_pub;
     signal input threshold;
 
-    // hash the attribute value
+    // hash
     component hasher = Poseidon(2);
     hasher.inputs[0] <== val;
     hasher.inputs[1] <== salt;
 
-    // verify CA signature over the hash
+    // verify CA sig
     component verifier = EdDSAPoseidonVerifier();
     verifier.enabled <== 1;
     verifier.Ax <== Ax;
@@ -36,11 +36,11 @@ template AgeCheckV2() {
     verifier.S <== S;
     verifier.M <== hasher.out;
 
-    // bind private key copy to public input so prover cant use a different key
+    // bind private key to public input
     Ax === Ax_pub;
     Ay === Ay_pub;
 
-    // check val >= threshold (8 bits is enough for age)
+    // check val >= threshold
     component gte = GreaterEqThan(8);
     gte.in[0] <== val;
     gte.in[1] <== threshold;

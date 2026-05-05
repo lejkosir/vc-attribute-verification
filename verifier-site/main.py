@@ -67,6 +67,9 @@ def verify():
         if calculated_hash != expected_hash:
             return jsonify({"valid": False}), 400
 
+        if key == "age" and val_int < 18:
+            return jsonify({"valid": False}), 400
+
     resp = make_response(jsonify({"valid": True}))
     resp.set_cookie("verified_age", "true", samesite="Lax")
     return resp
@@ -97,6 +100,11 @@ def verify_zkp():
     proof_hash = str(public[0])
     if proof_hash != ca_hash:
         print("hash mismatch")
+        return jsonify({"valid": False}), 400
+
+    required_threshold = 18
+    if int(public[1]) != required_threshold:
+        print("threshold mismatch")
         return jsonify({"valid": False}), 400
 
     with open("/tmp/proof.json", "w") as f:

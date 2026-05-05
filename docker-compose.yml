@@ -30,6 +30,7 @@ services:
       dockerfile: circom/Dockerfile
     container_name: circom-setup
     volumes:
-      - ./circuits/age_checkV2:/output
+      - ./circuits/age_checkV1:/output_v1
+      - ./circuits/age_checkV2:/output_v2
     profiles:
       - setup

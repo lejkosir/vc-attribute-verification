@@ -18,6 +18,7 @@ VC_STORE = WALLET_DIR / "credentials.json"
 
 PROJECT_ROOT = Path(__file__).parent.parent
 CIRCUIT_V1_DIR = PROJECT_ROOT / "circuits" / "age_checkV1"
+CIRCUIT_V1_JS = CIRCUIT_V1_DIR / "age_check_js"
 CIRCUIT_V2_DIR = PROJECT_ROOT / "circuits" / "age_checkV2"
 CIRCUIT_V2_JS = CIRCUIT_V2_DIR / "age_check_v2_js"
 
@@ -203,42 +204,42 @@ def selective_disclosure_api(attribute):
 
 # ZKP
 
-def generate_zkp(val, salt, expected_hash):
+def generate_zkp(val, salt, expected_hash, threshold=18):
+    if int(val) < threshold:
+        return {"error": "age below threshold"}
+
     zkey_file = str(CIRCUIT_V1_DIR / "age_check_final.zkey")
     input_file = "input.json"
     witness_file = "witness.wtns"
     proof_file = "proof.json"
     public_file = "public.json"
 
-    if not CIRCUIT_V1_DIR.exists():
+    if not CIRCUIT_V1_JS.exists():
         return {"error": "circuit files not found"}
 
-    body_json, unhashed, vc_jwt = get_creds()
-
-    print(body_json)
-
     inputs = {
-        "val": int(val),
+        "val": str(val),
         "salt": str(salt),
-        "expectedHash": str(expected_hash)
+        "expectedHash": str(expected_hash),
+        "threshold": str(threshold)
     }
 
-    with open(CIRCUIT_V1_DIR / input_file, "w") as f:
+    with open(CIRCUIT_V1_JS / input_file, "w") as f:
         json.dump(inputs, f)
 
     subprocess.run(
         ['node', 'generate_witness.js', 'age_check.wasm', input_file, witness_file],
-        cwd=CIRCUIT_V1_DIR,
+        cwd=CIRCUIT_V1_JS,
         check=True
     )
 
     cmd = f'snarkjs groth16 prove "{zkey_file}" {witness_file} {proof_file} {public_file}'
-    subprocess.run(cmd, cwd=CIRCUIT_V1_DIR, shell=True, check=True)
+    subprocess.run(cmd, cwd=CIRCUIT_V1_JS, shell=True, check=True)
 
     time.sleep(0.2)
-    with open(CIRCUIT_V1_DIR / proof_file) as f:
+    with open(CIRCUIT_V1_JS / proof_file) as f:
         proof = json.load(f)
-    with open(CIRCUIT_V1_DIR / public_file) as f:
+    with open(CIRCUIT_V1_JS / public_file) as f:
         public = json.load(f)
     print(proof, public)
     return proof, public
@@ -265,7 +266,7 @@ def zkp_disclosure_api(attribute):
 
     if decision.startswith('y'):
         print("approved")
-        result = generate_zkp(info["val_int"], info["salt"], expected_hash)
+        result = generate_zkp(info["val_int"], info["salt"], expected_hash, threshold=18)
         if isinstance(result, dict):
             return result
         proof, public = result
@@ -283,6 +284,9 @@ def zkp_disclosure_api(attribute):
 # ZKP V2
 
 def generate_zkp_v2(val_int, salt, R8x, R8y, S, Ax, Ay, threshold=18):
+    if int(val_int) < threshold:
+        return {"error": "age below threshold"}
+
     wasm_file = "age_check_v2.wasm"
     zkey_file = str(CIRCUIT_V2_DIR / "age_check_v2_final.zkey")
     input_file = "input_v2.json"
@@ -386,7 +390,7 @@ def disclose_zkp_v2(req: DisclosureRequest):
     return zkp_v2_disclosure_api(req.attribute)
 
 def start_server():
-    uvicorn.run(app, host="127.0.0.1", port=8001, log_level="info")
+    uvicorn.run(app, host="127.0.0.1", port=8501, log_level="info")
 
 
 def main_menu():
@@ -413,7 +417,7 @@ def main_menu():
         elif choice == "4":
             remove_credentials()
         elif choice == "5":
-            generate_zkp(val="23", salt="55139075980980285140718201367886350513", expected_hash="15656714370521641343762386545036458095253698961471300526207916569789931879587")
+            generate_zkp(val="23", salt="55139075980980285140718201367886350513", expected_hash="15656714370521641343762386545036458095253698961471300526207916569789931879587", threshold=18)
         elif choice == "6":
             attr = input("Attribute to disclose via ZKP v2: ").strip()
             result = zkp_v2_disclosure_api(attr)
