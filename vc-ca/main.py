@@ -1,51 +1,20 @@
-import datetime
 from fastapi import FastAPI
 from pydantic import BaseModel
-import jwt
-from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives import serialization
 import json
 import os
 import subprocess
-
+import uuid
+from datetime import datetime, timezone
 
 app = FastAPI()
 
 KEYS_DIR = "keys"
-PRIVATE_KEY_PATH = os.path.join(KEYS_DIR, "ec_private.pem")
-PUBLIC_KEY_PATH = os.path.join(KEYS_DIR, "ec_public.pem")
 BJJ_PRIVATE_KEY_PATH = os.path.join(KEYS_DIR, "bjj_secret.json")
 BJJ_PUBLIC_KEY_PATH = os.path.join(KEYS_DIR, "bjj_public.json")
 
-def ensure_keys():
-    os.makedirs(KEYS_DIR, exist_ok=True)
-
-    if not os.path.exists(PRIVATE_KEY_PATH):
-        print("Generating EC keypair...")
-        private_key = ec.generate_private_key(ec.SECP256R1())
-
-        with open(PRIVATE_KEY_PATH, "wb") as f:
-            f.write(
-                private_key.private_bytes(
-                    encoding=serialization.Encoding.PEM,
-                    format=serialization.PrivateFormat.TraditionalOpenSSL,
-                    encryption_algorithm=serialization.NoEncryption(),
-                )
-            )
-
-        public_key = private_key.public_key()
-        with open(PUBLIC_KEY_PATH, "wb") as f:
-            f.write(
-                public_key.public_bytes(
-                    encoding=serialization.Encoding.PEM,
-                    format=serialization.PublicFormat.SubjectPublicKeyInfo,
-                )
-            )
-
-    print("Keys ready.")
-
 
 def ensure_bjj_keys():
+    os.makedirs(KEYS_DIR, exist_ok=True)
     if not os.path.exists(BJJ_PRIVATE_KEY_PATH):
         print("Generating BabyJubJub keypair...")
         result = subprocess.run(
@@ -77,20 +46,6 @@ def sign_with_bjj(hash_int):
     return json.loads(result.stdout.strip())
 
 
-ensure_keys()
-ensure_bjj_keys()
-
-
-def load_private_key():
-    with open(PRIVATE_KEY_PATH, "rb") as f:
-        return serialization.load_pem_private_key(f.read(), password=None)
-
-
-class VCRequest(BaseModel):
-    subject_id: str
-    attributes: dict
-
-
 def get_poseidon_hash(value, salt):
     result = subprocess.run(
         ['node', '/app/poseidon_hasher.js', str(value), str(salt)],
@@ -101,111 +56,67 @@ def get_poseidon_hash(value, salt):
     return int(result.stdout.strip())
 
 
-def normalize_and_convert(v):
-    if isinstance(v, int):
-        return v
-    if str(v).isdigit():
-        return int(v)
-
-    s = str(v)
-    mapping = {"č": "c", "š": "s", "ž": "z", "ć": "c", "đ": "d", "Č": "C", "Š": "S", "Ž": "Z", "Ć": "C", "Đ": "D"}
-    for char, replacement in mapping.items():
-        s = s.replace(char, replacement)
-
-    b = s[:31].encode('utf-8')
-    return int.from_bytes(b, byteorder='big')
+ensure_bjj_keys()
 
 
-def process_claims(attributes):
-    public_subject = {}
-    private_subject = {}
-    for key, value in attributes.items():
-        salt_int = int.from_bytes(os.urandom(16), byteorder='big')
-        val_int = normalize_and_convert(value)
-        h = get_poseidon_hash(val_int, salt_int)
-        # CE NI STRING ZGUBI BITE!!!
-        public_subject[key] = {"hash": str(h)}  #STRING
-        private_subject[key] = {
-            "val": value,
-            "val_int": val_int,
-            "salt": str(salt_int),  #STRING
-            "hash": str(h)  #STRING
-        }
-    return public_subject, private_subject
+class VCRequest(BaseModel):
+    subject_id: str
+    birthdate: str  # ISO date string, e.g. "1990-01-15"
+
 
 @app.post("/issue_vc")
 def issue_vc(req: VCRequest):
-    private_key = load_private_key()
+    birthdate_dt = datetime.strptime(req.birthdate, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    birthdate_int = int(birthdate_dt.timestamp())
 
-    public_claims, private_secrets = process_claims(req.attributes)
-
-    now = int(datetime.datetime.utcnow().timestamp())
-
-    # plaintext with salt
-    vc_payload = {
-        "iss": "did:example:ca",
-        "sub": req.subject_id,
-        "nbf": now,
-        "iat": now,
-        "vc": {
-            "type": ["VerifiableCredential", "PrivateSecrets"],
-            "credentialSubject": private_secrets
-        }
-    }
-
-    # hashed
-    vc_payload_hashed = {
-        "iss": "did:example:ca",
-        "sub": req.subject_id,
-        "nbf": now,
-        "iat": now,
-        "vc": {
-            "type": ["VerifiableCredential", "HashedClaims"],
-            "credentialSubject": public_claims
-        }
-    }
-
-    jwt_vc = jwt.encode(
-        vc_payload,
-        private_key,
-        algorithm="ES256"
-    )
-    jwt_vc_hashed = jwt.encode(
-        vc_payload_hashed,
-        private_key,
-        algorithm="ES256"
-    )
-
-    # ZKPv2
+    salt_int = int.from_bytes(os.urandom(16), byteorder='big')
+    h = get_poseidon_hash(birthdate_int, salt_int)
+    sig = sign_with_bjj(h)
     bjj_pk = load_bjj_public_key()
-    eddsa_attributes = {}
-    for key, info in private_secrets.items():
-        hash_int = int(info["hash"])
-        sig = sign_with_bjj(hash_int)
-        eddsa_attributes[key] = {
-            "val": info["val"],
-            "val_int": info["val_int"],
-            "salt": info["salt"],
-            "hash": info["hash"],
-            "sig": sig
-        }
 
-    eddsa_credential = {
-        "subject_id": req.subject_id,
-        "attributes": eddsa_attributes,
-        "public_key": bjj_pk
+    now_iso = datetime.now(timezone.utc).isoformat()
+    credential_id = f"urn:uuid:{uuid.uuid4()}"
+
+    vc = {
+        "@context": [
+            "https://www.w3.org/ns/credentials/v2",
+            "https://example.org/contexts/bjj-poseidon/v1"
+        ],
+        "id": credential_id,
+        "type": ["VerifiableCredential", "AgeCredential"],
+        "issuer": "did:example:ca",
+        "validFrom": now_iso,
+        "credentialSubject": {
+            "id": f"did:example:{req.subject_id}",
+            "birthdate": {
+                "hash": str(h),
+                "salt": str(salt_int)
+            }
+        },
+        "proof": {
+            "type": "BabyJubJubPoseidon2024",
+            "created": now_iso,
+            "verificationMethod": "did:example:ca#bjj-key-1",
+            "proofPurpose": "assertionMethod",
+            "proofValue": {
+                "R8x": sig["R8x"],
+                "R8y": sig["R8y"],
+                "S": sig["S"]
+            },
+            "publicKey": {
+                "Ax": bjj_pk["Ax"],
+                "Ay": bjj_pk["Ay"]
+            }
+        }
     }
 
     return {
-        "credential": (jwt_vc, jwt_vc_hashed, eddsa_credential)
+        "vc": vc,
+        "private": {
+            "birthdate_int": birthdate_int,
+            "salt": str(salt_int)
+        }
     }
-
-
-@app.get("/public_key")
-def get_public_key():
-    with open(PUBLIC_KEY_PATH, "r") as f:
-        pub = f.read()
-    return {"publicKeyPem": pub}
 
 
 @app.get("/public_key_bjj")

@@ -1,5 +1,3 @@
-#version: "3.8"
-
 services:
   ca:
     build: ./vc-ca
@@ -21,7 +19,6 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
     volumes:
-      - ./circuits/age_checkV1/verification_key.json:/app/verification_key.json:ro
       - ./circuits/age_checkV2:/app/circuits_v2:ro
 
   circom:
@@ -30,7 +27,6 @@ services:
       dockerfile: circom/Dockerfile
     container_name: circom-setup
     volumes:
-      - ./circuits/age_checkV1:/output_v1
       - ./circuits/age_checkV2:/output_v2
     profiles:
       - setup

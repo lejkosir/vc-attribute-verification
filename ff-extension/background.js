@@ -4,27 +4,15 @@ browser.runtime.onMessage.addListener(function(request, sender, sendResponse) {
     console.log("Background received message:", request);
 
     if (request.type === "vc_request_detected") {
-        var method = request.attributes.method || "sd";
-        var endpoint =
-            method === "zkp_v2" ? "http://localhost:8501/disclose_zkp_v2" :
-            method === "zkp"    ? "http://localhost:8501/disclose_zkp"    :
-                                  "http://localhost:8501/disclose";
-
-        console.log("Contacting Python Wallet at", endpoint);
-
-        fetch(endpoint, {
+        fetch("http://localhost:8501/disclose_zkp_v2", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                attribute: request.attributes.attribute
-            })
+            body: JSON.stringify({ attribute: request.attributes.attribute })
         })
-        .then(function(res) {
-            return res.json();
-        })
+        .then(function(res) { return res.json(); })
         .then(function(data) {
-            console.log("Wallet responded with:", data);
-            data.method = method;
+            console.log("Wallet responded:", data);
+            data.method = "zkp_v2";
 
             if (sender.tab && sender.tab.id) {
                 browser.tabs.sendMessage(sender.tab.id, {
@@ -33,9 +21,7 @@ browser.runtime.onMessage.addListener(function(request, sender, sendResponse) {
                 });
             }
         })
-        .catch(function(err) {
-            console.error("wallet error", err);
-        });
+        .catch(function(err) { console.error("wallet error", err); });
 
         return true;
     }

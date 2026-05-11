@@ -8,7 +8,7 @@ include "comparators.circom";
 template AgeCheckV2() {
 
     // private
-    signal input val;
+    signal input birthdate;
     signal input salt;
     signal input R8x;
     signal input R8y;
@@ -19,11 +19,12 @@ template AgeCheckV2() {
     // public
     signal input Ax_pub;
     signal input Ay_pub;
-    signal input threshold;
+    signal input currentDate;
+    signal input minAge;
 
     // hash
     component hasher = Poseidon(2);
-    hasher.inputs[0] <== val;
+    hasher.inputs[0] <== birthdate;
     hasher.inputs[1] <== salt;
 
     // verify CA sig
@@ -40,11 +41,14 @@ template AgeCheckV2() {
     Ax === Ax_pub;
     Ay === Ay_pub;
 
-    // check val >= threshold
-    component gte = GreaterEqThan(8);
-    gte.in[0] <== val;
-    gte.in[1] <== threshold;
+    // check age >= minAge
+    signal age;
+    age <== currentDate - birthdate;
+
+    component gte = GreaterEqThan(32);
+    gte.in[0] <== age;
+    gte.in[1] <== minAge;
     gte.out === 1;
 }
 
-component main {public [Ax_pub, Ay_pub, threshold]} = AgeCheckV2();
+component main {public [Ax_pub, Ay_pub, currentDate, minAge]} = AgeCheckV2();
