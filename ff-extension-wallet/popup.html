@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+        width: 300px;
+        padding: 10px;
+        font-family: Arial, sans-serif;
+    }
+    input {
+        display: block;
+        width: 100%;
+        margin-bottom: 6px;
+        padding: 4px;
+        box-sizing: border-box;
+    }
+    button {
+        padding: 4px 10px;
+        cursor: pointer;
+    }
+    #status {
+        margin-top: 6px;
+        font-size: 13px;
+    }
+    #cred-list {
+        margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h3>VC Wallet</h3>
+
+  <b>Stored credentials:</b>
+  <div id="cred-list"></div>
+
+  <hr>
+
+  <b>Get VC from CA:</b><br><br>
+  <form id="fetch-form">
+    <input type="text" id="subject-id" placeholder="Subject ID">
+    <input type="text" id="birthdate" placeholder="Birthdate (YYYY-MM-DD)">
+    <button type="submit">Request</button>
+  </form>
+  <div id="status"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

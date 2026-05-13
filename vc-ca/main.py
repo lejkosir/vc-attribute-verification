@@ -61,7 +61,7 @@ ensure_bjj_keys()
 
 class VCRequest(BaseModel):
     subject_id: str
-    birthdate: str  # ISO date string, e.g. "1990-01-15"
+    birthdate: str  # ISO "2000-01-15"
 
 
 @app.post("/issue_vc")
@@ -89,8 +89,7 @@ def issue_vc(req: VCRequest):
         "credentialSubject": {
             "id": f"did:example:{req.subject_id}",
             "birthdate": {
-                "hash": str(h),
-                "salt": str(salt_int)
+                "hash": str(h)
             }
         },
         "proof": {
