@@ -1,13 +1,16 @@
 console.log("background.js loaded, snarkjs:", typeof snarkjs);
 
-var MIN_AGE = 18 * 365 * 86400;
 var CA_URL = "http://localhost:8000";
 
 browser.runtime.onMessage.addListener(function(request, sender, sendResponse) {
 
     if (request.type === "vc_request_detected") {
         console.log("got vc request");
-
+        console.log(request);
+        const challenge = request.attributes.challenge;
+        const MIN_AGE = request.attributes.min_age;
+        console.log(challenge);
+        console.log(MIN_AGE);
         browser.storage.local.get("credentials").then(function(result) {
             var creds = result.credentials || [];
 
@@ -48,6 +51,8 @@ browser.runtime.onMessage.addListener(function(request, sender, sendResponse) {
                 S: sig.S.toString(),
                 Ax: pk.Ax.toString(),
                 Ay: pk.Ay.toString(),
+                challenge: challenge,
+                challenge_pub: challenge,
                 Ax_pub: pk.Ax.toString(),
                 Ay_pub: pk.Ay.toString(),
                 currentDate: currentDate.toString(),

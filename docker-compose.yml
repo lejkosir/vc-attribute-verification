@@ -28,5 +28,6 @@ services:
     container_name: circom-setup
     volumes:
       - ./circuits/age_checkV2:/output_v2
+      - ./ff-extension-wallet/assets:/app/ff-extension-wallet/assets
     profiles:
       - setup

@@ -17,6 +17,7 @@ RUN npm install circomlibjs
 RUN npm install -g snarkjs
 
 COPY main.py .
+COPY templates/ templates/
 
 EXPOSE 5000
 

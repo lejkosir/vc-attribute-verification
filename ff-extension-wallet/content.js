@@ -27,7 +27,7 @@ function checkForRequest() {
     if (ok) {
         browser.runtime.sendMessage({
             type: "vc_request_detected",
-            attributes: { attribute: div.dataset.attribute }
+            attributes: { attribute: div.dataset.attribute, challenge:div.dataset.challenge, min_age:div.dataset.min_age }
         });
     } else {
         started = false;

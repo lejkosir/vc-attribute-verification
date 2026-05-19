@@ -15,12 +15,17 @@ template AgeCheckV2() {
     signal input S;
     signal input Ax;
     signal input Ay;
+    signal input challenge;
 
     // public
     signal input Ax_pub;
     signal input Ay_pub;
     signal input currentDate;
     signal input minAge;
+    signal input challenge_pub;
+
+    // check chal
+    challenge === challenge_pub;
 
     // hash
     component hasher = Poseidon(2);
@@ -51,4 +56,4 @@ template AgeCheckV2() {
     gte.out === 1;
 }
 
-component main {public [Ax_pub, Ay_pub, currentDate, minAge]} = AgeCheckV2();
+component main {public [Ax_pub, Ay_pub, currentDate, minAge, challenge_pub]} = AgeCheckV2();

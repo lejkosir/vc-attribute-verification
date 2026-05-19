@@ -4,7 +4,7 @@ set -e
 RANDOM_HEX=$(node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))")
 RANDOM_HEX2=$(node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))")
 RANDOM_HEX3=$(node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))")
-
+echo "Starting..."
 echo "=== Step 1: Compile circuit ==="
 circom /app/age_check_v2.circom \
     --r1cs --wasm --sym \
@@ -23,4 +23,8 @@ snarkjs zkey contribute /output_v2/age_check_v2_0.zkey /output_v2/age_check_v2_f
     --name="setup" -e="$RANDOM_HEX2"
 snarkjs zkey export verificationkey /output_v2/age_check_v2_final.zkey /output_v2/verification_key.json
 
-echo "=== Done. Artifacts written to /output_v2 ==="
+echo "=== Step 4: Copy artifacts to extension assets ==="
+cp /output_v2/age_check_v2_js/age_check_v2.wasm /app/ff-extension-wallet/assets/age_check_v2.wasm
+cp /output_v2/age_check_v2_final.zkey /app/ff-extension-wallet/assets/age_check_v2_final.zkey
+
+echo "=== Done. Artifacts written to /output_v2 and copied to extension assets ==="
