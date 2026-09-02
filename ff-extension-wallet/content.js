@@ -2,9 +2,12 @@ var started = false;
 
 browser.runtime.onMessage.addListener(function(message) {
     if (message.type === "vc_response") {
+        var req = document.getElementById("vc-request");
+        if (req) req.remove();
+        started = false;
+
         if (message.payload.error) {
             alert("Wallet error: " + message.payload.error);
-            started = false;
             return;
         }
 

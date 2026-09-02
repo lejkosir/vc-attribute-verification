@@ -8,13 +8,13 @@ ZK age verification using W3C Verifiable Credentials, BabyJubJub EdDSA signature
 
 **`ff-extension-wallet/`** (Firefox WebExtension MV2) — Browser wallet. Stores credentials in `browser.storage.local`. On a verification request, generates a Groth16 ZK proof in-browser using snarkjs (bundled wasm + zkey). No external wallet process needed.
 
-**`verifier-site/`** (Flask, port 5000) — Demo page and verifier. Checks the proof against the circuit's verification key, validates the CA public key, checks proof freshness (5 min window), and checks the minAge signal. Sets a `verified_age` cookie on success.
+**`verifier-site/`** (Flask, port 5000) — Demo page and verifier. Issues a single-use, session-bound challenge, then checks the proof against the circuit's verification key, validates the CA public key, checks proof freshness (5 min window), and checks the minAge signal. Marks the Flask session as verified on success.
 
 **`circuits/age_checkV2/`** — Circom circuit and precompiled artifacts. Proves `currentDate - birthdate >= 18 years` over a CA-signed birthdate without revealing it.
 
 ### Credential format
 
-The CA returns a W3C VC with the birthdate hash + EdDSA signature in the proof, plus a separate `private` field (birthdate as Unix timestamp + salt) that only the wallet stores.
+The CA returns a W3C VC with the birthdate hash + EdDSA signature in the proof, plus a separate `private` field (birthdate + salt) that only the wallet stores. Dates are encoded as seconds since 1900-01-01 rather than the Unix epoch, so pre-1970 birthdates stay positive in the field; the CA, wallet, and verifier all share `EPOCH_OFFSET = 2208988800`.
 
 ### Setup
 

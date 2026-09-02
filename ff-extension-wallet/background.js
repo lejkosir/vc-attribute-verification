@@ -2,6 +2,10 @@ console.log("background.js loaded, snarkjs:", typeof snarkjs);
 
 var CA_URL = "http://localhost:8000";
 
+
+var EPOCH_OFFSET = 2208988800;
+
+
 browser.runtime.onMessage.addListener(function(request, sender, sendResponse) {
 
     if (request.type === "vc_request_detected") {
@@ -33,9 +37,10 @@ browser.runtime.onMessage.addListener(function(request, sender, sendResponse) {
             var sig = vc.proof.proofValue;
             var pk = vc.proof.publicKey;
 
-            var currentDate = Math.floor(Date.now() / 1000);
+            var currentDate = Math.floor(Date.now() / 1000) + EPOCH_OFFSET;
+            var age = currentDate - parseInt(priv.birthdate_int);
 
-            if (currentDate - parseInt(priv.birthdate_int) < MIN_AGE) {
+            if (age < MIN_AGE) {
                 browser.tabs.sendMessage(sender.tab.id, {
                     type: "vc_response",
                     payload: { error: "age below minimum" }
@@ -52,9 +57,6 @@ browser.runtime.onMessage.addListener(function(request, sender, sendResponse) {
                 Ax: pk.Ax.toString(),
                 Ay: pk.Ay.toString(),
                 challenge: challenge,
-                challenge_pub: challenge,
-                Ax_pub: pk.Ax.toString(),
-                Ay_pub: pk.Ay.toString(),
                 currentDate: currentDate.toString(),
                 minAge: MIN_AGE.toString()
             };
@@ -63,8 +65,9 @@ browser.runtime.onMessage.addListener(function(request, sender, sendResponse) {
             var zkeyUrl = browser.runtime.getURL("assets/age_check_v2_final.zkey");
 
             console.log("generating proof...");
-
+            console.time("generacija_dokaza");
             snarkjs.groth16.fullProve(inputs, wasmUrl, zkeyUrl).then(function(res) {
+                console.timeEnd("generacija_dokaza");
                 console.log("proof done!");
                 browser.tabs.sendMessage(sender.tab.id, {
                     type: "vc_response",

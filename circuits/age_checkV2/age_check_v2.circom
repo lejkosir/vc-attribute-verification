@@ -4,7 +4,6 @@ include "poseidon.circom";
 include "eddsaposeidon.circom";
 include "comparators.circom";
 
-
 template AgeCheckV2() {
 
     // private
@@ -13,19 +12,16 @@ template AgeCheckV2() {
     signal input R8x;
     signal input R8y;
     signal input S;
-    signal input Ax;
-    signal input Ay;
-    signal input challenge;
 
     // public
-    signal input Ax_pub;
-    signal input Ay_pub;
+    signal input Ax;
+    signal input Ay;
     signal input currentDate;
     signal input minAge;
-    signal input challenge_pub;
+    signal input challenge;
 
-    // check chal
-    challenge === challenge_pub;
+    signal challengeSq;
+    challengeSq <== challenge * challenge;
 
     // hash
     component hasher = Poseidon(2);
@@ -42,10 +38,6 @@ template AgeCheckV2() {
     verifier.S <== S;
     verifier.M <== hasher.out;
 
-    // bind private key to public input
-    Ax === Ax_pub;
-    Ay === Ay_pub;
-
     // check age >= minAge
     signal age;
     age <== currentDate - birthdate;
@@ -56,4 +48,4 @@ template AgeCheckV2() {
     gte.out === 1;
 }
 
-component main {public [Ax_pub, Ay_pub, currentDate, minAge, challenge_pub]} = AgeCheckV2();
+component main {public [Ax, Ay, currentDate, minAge, challenge]} = AgeCheckV2();

@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import json
 import os
@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 app = FastAPI()
 
+EPOCH_OFFSET = 2208988800  # seconds between 1900-01-01 and 1970-01-01
 KEYS_DIR = "keys"
 BJJ_PRIVATE_KEY_PATH = os.path.join(KEYS_DIR, "bjj_secret.json")
 BJJ_PUBLIC_KEY_PATH = os.path.join(KEYS_DIR, "bjj_public.json")
@@ -67,7 +68,10 @@ class VCRequest(BaseModel):
 @app.post("/issue_vc")
 def issue_vc(req: VCRequest):
     birthdate_dt = datetime.strptime(req.birthdate, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-    birthdate_int = int(birthdate_dt.timestamp())
+    birthdate_int = int(birthdate_dt.timestamp()) + EPOCH_OFFSET
+
+    if birthdate_int < 0:
+        raise HTTPException(status_code=400, detail="birthdate before 1900-01-01 is not supported")
 
     salt_int = int.from_bytes(os.urandom(16), byteorder='big')
     h = get_poseidon_hash(birthdate_int, salt_int)
